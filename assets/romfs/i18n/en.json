@@ -97,7 +97,7 @@
   "Enter URL": "Enter URL",
   "web_browser_info": [
     "Launch the built-in web browser.\n",
-    "NOTE: The browser is very limted, some websites will fail to load and there's a 30 minute timeout which closes the browser"
+    "NOTE: The browser is very limited, some websites will fail to load and there's a 30 minute timeout which closes the browser"
   ],
   "Advanced Options": "Advanced Options",
   "Slow": "Slow",
