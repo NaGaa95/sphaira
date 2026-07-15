@@ -83,7 +83,14 @@ void RepoManager::Load() {
         repo.url = Trim(fields[0]);
         repo.name = Trim(fields[1]);
         repo.enabled = ParseBoolFromField(fields[2], true);
-        repo.priority = fields[3].empty() ? static_cast<long>(i) : std::strtol(fields[3].c_str(), nullptr, 10);
+        repo.priority = static_cast<long>(i);
+        if (!fields[3].empty()) {
+            char* end_ptr{};
+            const auto parsed = std::strtol(fields[3].c_str(), &end_ptr, 10);
+            if (end_ptr && end_ptr != fields[3].c_str() && *end_ptr == '\0') {
+                repo.priority = parsed;
+            }
+        }
 
         if (repo.url.empty()) {
             continue;
@@ -167,6 +174,7 @@ auto RepoManager::AddRepo(const std::string& url, const std::string& name) -> bo
 
     for (const auto& repo : m_repos) {
         if (!strcasecmp(repo.url.c_str(), trimmed_url.c_str())) {
+            log_write("[Repo] duplicate repo ignored: %s\n", trimmed_url.c_str());
             return false;
         }
     }

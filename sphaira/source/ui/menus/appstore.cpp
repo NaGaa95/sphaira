@@ -26,6 +26,7 @@
 #include <minIni.h>
 #include <string>
 #include <cstring>
+#include <cctype>
 #include <yyjson.h>
 #include <stb_image.h>
 #include <minizip/unzip.h>
@@ -80,49 +81,37 @@ constexpr const char* ORDER_STR[] = {
     "Asc",
 };
 
-auto BuildIconUrl(const Entry& e) -> std::string {
-    auto base = e.repo_source;
+auto BuildRepoBaseUrl(std::string base) -> std::string {
     const auto repo_json = std::string{"/repo.json"};
     if (base.ends_with(repo_json)) {
         base.resize(base.size() - repo_json.size());
     }
+    return base;
+}
 
+auto BuildIconUrl(const Entry& e) -> std::string {
+    const auto base = BuildRepoBaseUrl(e.repo_source);
     char out[0x100];
     std::snprintf(out, sizeof(out), "%s/packages/%s/icon.png", base.c_str(), e.name.c_str());
     return out;
 }
 
 auto BuildBannerUrl(const Entry& e) -> std::string {
-    auto base = e.repo_source;
-    const auto repo_json = std::string{"/repo.json"};
-    if (base.ends_with(repo_json)) {
-        base.resize(base.size() - repo_json.size());
-    }
-
+    const auto base = BuildRepoBaseUrl(e.repo_source);
     char out[0x100];
     std::snprintf(out, sizeof(out), "%s/packages/%s/screen.png", base.c_str(), e.name.c_str());
     return out;
 }
 
 auto BuildManifestUrl(const Entry& e) -> std::string {
-    auto base = e.repo_source;
-    const auto repo_json = std::string{"/repo.json"};
-    if (base.ends_with(repo_json)) {
-        base.resize(base.size() - repo_json.size());
-    }
-
+    const auto base = BuildRepoBaseUrl(e.repo_source);
     char out[0x100];
     std::snprintf(out, sizeof(out), "%s/packages/%s/manifest.install", base.c_str(), e.name.c_str());
     return out;
 }
 
 auto BuildZipUrl(const Entry& e) -> std::string {
-    auto base = e.repo_source;
-    const auto repo_json = std::string{"/repo.json"};
-    if (base.ends_with(repo_json)) {
-        base.resize(base.size() - repo_json.size());
-    }
-
+    const auto base = BuildRepoBaseUrl(e.repo_source);
     char out[0x100];
     std::snprintf(out, sizeof(out), "%s/zips/%s.zip", base.c_str(), e.name.c_str());
     return out;
@@ -192,14 +181,32 @@ void from_json(const fs::FsPath& path, std::vector<appstore::Entry>& e) {
 }
 
 auto ParseUpdatedNum(std::string_view updated) -> u32 {
-    if (updated.size() < 8) {
+    if (updated.size() < 10) {
+        return 0;
+    }
+
+    if (!std::isdigit(static_cast<u8>(updated[0])) ||
+        !std::isdigit(static_cast<u8>(updated[1])) ||
+        !std::isdigit(static_cast<u8>(updated[3])) ||
+        !std::isdigit(static_cast<u8>(updated[4])) ||
+        !std::isdigit(static_cast<u8>(updated[6])) ||
+        !std::isdigit(static_cast<u8>(updated[7])) ||
+        !std::isdigit(static_cast<u8>(updated[8])) ||
+        !std::isdigit(static_cast<u8>(updated[9]))) {
+        return 0;
+    }
+
+    if (updated[2] != '/' && updated[2] != '-' && updated[2] != '.') {
+        return 0;
+    }
+    if (updated[5] != '/' && updated[5] != '-' && updated[5] != '.') {
         return 0;
     }
 
     u32 out{};
-    out += std::atoi(updated.data()); // day
-    out += std::atoi(updated.data() + 3) * 100; // month
-    out += std::atoi(updated.data() + 6) * 100 * 100; // year
+    out += (updated[0] - '0') * 10 + (updated[1] - '0'); // day
+    out += ((updated[3] - '0') * 10 + (updated[4] - '0')) * 100; // month
+    out += ((updated[6] - '0') * 1000 + (updated[7] - '0') * 100 + (updated[8] - '0') * 10 + (updated[9] - '0')) * 100 * 100; // year
     return out;
 }
 
@@ -1147,8 +1154,12 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
     // max images per frame, in order to not hit io / gpu too hard.
     const int image_load_max = 2;
     int image_load_count = 0;
+    std::unordered_map<std::string, std::string> repo_name_map{};
+    for (const auto& repo : RepoManager::Get().GetRepos()) {
+        repo_name_map.emplace(repo.url, repo.name);
+    }
 
-    m_list->Draw(vg, theme, m_entries_current.size(), [this, &image_load_count](auto* vg, auto* theme, auto v, auto pos) {
+    m_list->Draw(vg, theme, m_entries_current.size(), [this, &image_load_count, &repo_name_map](auto* vg, auto* theme, auto v, auto pos) {
         const auto& [x, y, w, h] = v;
         const auto index = m_entries_current[pos];
         auto& e = m_entries[index];
@@ -1231,13 +1242,9 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
                 break;
         }
 
-        const auto& repos = RepoManager::Get().GetRepos();
         std::string repo_label = e.repo_source;
-        for (const auto& repo : repos) {
-            if (repo.url == e.repo_source) {
-                repo_label = repo.name;
-                break;
-            }
+        if (auto it = repo_name_map.find(e.repo_source); it != repo_name_map.end()) {
+            repo_label = it->second;
         }
 
         gfx::drawText(vg, x + 148.f, y + h - 8.f, 13.f, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM, theme->GetColour(ThemeEntryID_TEXT_INFO), repo_label.c_str());
@@ -1541,8 +1548,7 @@ void Menu::Sort() {
         }
     }
 
-    char subheader[256]{};
-    std::snprintf(subheader, sizeof(subheader), "Filter: %s | Repo: %s | Sort: %s | Order: %s"_i18n.c_str(), i18n::get(FILTER_STR[filter]).c_str(), repo_filter.c_str(), i18n::get(SORT_STR[sort]).c_str(), i18n::get(ORDER_STR[order]).c_str());
+    const auto subheader = "Filter: "_i18n + i18n::get(FILTER_STR[filter]) + " | Repo: " + repo_filter + " | Sort: " + i18n::get(SORT_STR[sort]) + " | Order: " + i18n::get(ORDER_STR[order]);
     SetTitleSubHeading(subheader);
 
     std::sort(m_entries_current.begin(), m_entries_current.end(), sorter);
