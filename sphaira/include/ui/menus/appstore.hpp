@@ -6,6 +6,7 @@
 #include "ui/list.hpp"
 #include "fs.hpp"
 #include "option.hpp"
+#include "repo_manager.hpp"
 #include <span>
 
 namespace sphaira::ui::menu::appstore {
@@ -50,6 +51,7 @@ struct Entry {
     std::string license{}; // optional
     std::string title{}; // same as name but with spaces
     std::string url{}; // url of repo (optional?)
+    std::string repo_source{}; // source repo url
     std::string description{};
     std::string author{};
     std::string changelog{}; // optional
@@ -174,6 +176,7 @@ private:
     void SetFilter();
     void SetSearch(const std::string& term);
     void OnLayoutChange();
+    void StartRepoDownload();
 
 private:
     static constexpr inline const char* INI_SECTION = "appstore";
@@ -182,12 +185,14 @@ private:
     std::vector<EntryMini> m_entries_index[Filter_MAX]{};
     std::vector<EntryMini> m_entries_index_author{};
     std::vector<EntryMini> m_entries_index_search{};
+    std::vector<EntryMini> m_entries_index_repo{};
     std::span<EntryMini> m_entries_current{};
 
     option::OptionLong m_filter{INI_SECTION, "filter", Filter::Filter_All};
     option::OptionLong m_sort{INI_SECTION, "sort", SortType::SortType_Updated};
     option::OptionLong m_order{INI_SECTION, "order", OrderType::OrderType_Descending};
     option::OptionLong m_layout{INI_SECTION, "layout", LayoutType::LayoutType_GridDetail};
+    option::OptionString m_repo_filter{INI_SECTION, "repo_filter", ""};
 
     s64 m_index{}; // where i am in the array
     LazyImage m_default_image{};
@@ -196,6 +201,9 @@ private:
     LazyImage m_local{};
     LazyImage m_installed{};
     ImageDownloadState m_repo_download_state{ImageDownloadState::None};
+    std::vector<RepoConfig> m_repo_download_list{};
+    std::size_t m_repo_download_index{};
+    u32 m_repo_download_success{};
     std::unique_ptr<List> m_list{};
 
     std::string m_search_term{};

@@ -1,5 +1,6 @@
 #include "ui/menus/appstore.hpp"
 #include "ui/menus/homebrew.hpp"
+#include "ui/menus/multi_repo_settings.hpp"
 #include "ui/sidebar.hpp"
 #include "ui/popup_list.hpp"
 #include "ui/progress_box.hpp"
@@ -25,20 +26,19 @@
 #include <minIni.h>
 #include <string>
 #include <cstring>
+#include <cctype>
 #include <yyjson.h>
 #include <stb_image.h>
 #include <minizip/unzip.h>
 #include <algorithm>
 #include <ranges>
 #include <utility>
+#include <unordered_map>
 
 namespace sphaira::ui::menu::appstore {
 namespace {
 
-constexpr fs::FsPath REPO_PATH{"/switch/sphaira/cache/appstore/repo.json"};
 constexpr fs::FsPath CACHE_PATH{"/switch/sphaira/cache/appstore"};
-constexpr auto URL_BASE = "https://switch.cdn.fortheusers.org";
-constexpr auto URL_JSON = "https://switch.cdn.fortheusers.org/repo.json";
 constexpr auto URL_POST_FEEDBACK = "http://switchbru.com/appstore/feedback";
 constexpr auto URL_GET_FEEDACK = "http://switchbru.com/appstore/feedback";
 
@@ -81,40 +81,48 @@ constexpr const char* ORDER_STR[] = {
     "Asc",
 };
 
+auto BuildRepoBaseUrl(std::string base) -> std::string {
+    const auto repo_json = std::string{"/repo.json"};
+    if (base.ends_with(repo_json)) {
+        base.resize(base.size() - repo_json.size());
+    }
+    return base;
+}
+
 auto BuildIconUrl(const Entry& e) -> std::string {
+    const auto base = BuildRepoBaseUrl(e.repo_source);
     char out[0x100];
-    std::snprintf(out, sizeof(out), "%s/packages/%s/icon.png", URL_BASE, e.name.c_str());
+    std::snprintf(out, sizeof(out), "%s/packages/%s/icon.png", base.c_str(), e.name.c_str());
     return out;
 }
 
 auto BuildBannerUrl(const Entry& e) -> std::string {
+    const auto base = BuildRepoBaseUrl(e.repo_source);
     char out[0x100];
-    std::snprintf(out, sizeof(out), "%s/packages/%s/screen.png", URL_BASE, e.name.c_str());
+    std::snprintf(out, sizeof(out), "%s/packages/%s/screen.png", base.c_str(), e.name.c_str());
     return out;
 }
 
 auto BuildManifestUrl(const Entry& e) -> std::string {
+    const auto base = BuildRepoBaseUrl(e.repo_source);
     char out[0x100];
-    std::snprintf(out, sizeof(out), "%s/packages/%s/manifest.install", URL_BASE, e.name.c_str());
+    std::snprintf(out, sizeof(out), "%s/packages/%s/manifest.install", base.c_str(), e.name.c_str());
     return out;
 }
 
 auto BuildZipUrl(const Entry& e) -> std::string {
+    const auto base = BuildRepoBaseUrl(e.repo_source);
     char out[0x100];
-    std::snprintf(out, sizeof(out), "%s/zips/%s.zip", URL_BASE, e.name.c_str());
+    std::snprintf(out, sizeof(out), "%s/zips/%s.zip", base.c_str(), e.name.c_str());
     return out;
 }
 
 auto BuildIconCachePath(const Entry& e) -> fs::FsPath {
-    fs::FsPath out;
-    std::snprintf(out, sizeof(out), "%s/icons/%s.png", CACHE_PATH.s, e.name.c_str());
-    return out;
+    return fs::AppendPath(RepoManager::Get().GetRepoCachePath(e.repo_source), "icons/" + e.name + ".png");
 }
 
 auto BuildBannerCachePath(const Entry& e) -> fs::FsPath {
-    fs::FsPath out;
-    std::snprintf(out, sizeof(out), "%s/banners/%s.png", CACHE_PATH.s, e.name.c_str());
-    return out;
+    return fs::AppendPath(RepoManager::Get().GetRepoCachePath(e.repo_source), "banners/" + e.name + ".png");
 }
 
 #if 0
@@ -170,6 +178,61 @@ void from_json(const fs::FsPath& path, std::vector<appstore::Entry>& e) {
     JSON_OBJ_ITR(
         JSON_SET_ARR_OBJ2(packages, e);
     );
+}
+
+auto ParseUpdatedNum(std::string_view updated) -> u32 {
+    if (updated.size() < 10) {
+        return 0;
+    }
+
+    if (!std::isdigit(static_cast<u8>(updated[0])) ||
+        !std::isdigit(static_cast<u8>(updated[1])) ||
+        !std::isdigit(static_cast<u8>(updated[3])) ||
+        !std::isdigit(static_cast<u8>(updated[4])) ||
+        !std::isdigit(static_cast<u8>(updated[6])) ||
+        !std::isdigit(static_cast<u8>(updated[7])) ||
+        !std::isdigit(static_cast<u8>(updated[8])) ||
+        !std::isdigit(static_cast<u8>(updated[9]))) {
+        return 0;
+    }
+
+    if (updated[2] != '/' && updated[2] != '-' && updated[2] != '.') {
+        return 0;
+    }
+    if (updated[5] != '/' && updated[5] != '-' && updated[5] != '.') {
+        return 0;
+    }
+
+    u32 out{};
+    out += (updated[0] - '0') * 10 + (updated[1] - '0'); // day
+    out += ((updated[3] - '0') * 10 + (updated[4] - '0')) * 100; // month
+    out += ((updated[6] - '0') * 1000 + (updated[7] - '0') * 100 + (updated[8] - '0') * 10 + (updated[9] - '0')) * 100 * 100; // year
+    return out;
+}
+
+auto ParseVersionNum(std::string_view version) -> u32 {
+    std::string copy{version};
+    const auto pos = copy.find_first_of("-+ ");
+    if (pos != copy.npos) {
+        copy.resize(pos);
+    }
+    return App::GetVersionFromString(copy.c_str());
+}
+
+auto ShouldReplaceDuplicate(const Entry& current, const Entry& candidate, long current_priority, long candidate_priority) -> bool {
+    const auto current_ver = ParseVersionNum(current.version);
+    const auto candidate_ver = ParseVersionNum(candidate.version);
+    if (candidate_ver != current_ver) {
+        return candidate_ver > current_ver;
+    }
+
+    const auto current_updated = ParseUpdatedNum(current.updated);
+    const auto candidate_updated = ParseUpdatedNum(candidate.updated);
+    if (candidate_updated != current_updated) {
+        return candidate_updated > current_updated;
+    }
+
+    return candidate_priority < current_priority;
 }
 
 auto ParseManifest(std::span<const char> view) -> ManifestEntries {
@@ -969,6 +1032,32 @@ Menu::Menu(u32 flags) : grid::Menu{"AppStore"_i18n, flags} {
                 OnLayoutChange();
             }, m_layout.Get());
 
+            SidebarEntryArray::Items repo_items;
+            repo_items.push_back("All repos"_i18n);
+            const auto& repos = RepoManager::Get().GetRepos();
+            s64 repo_index{};
+            for (std::size_t i = 0; i < repos.size(); i++) {
+                repo_items.push_back(repos[i].name);
+                if (m_repo_filter.Get() == repos[i].url) {
+                    repo_index = i + 1;
+                }
+            }
+
+            options->Add<SidebarEntryArray>("Repo source"_i18n, repo_items, [this](s64& index_out){
+                if (!index_out) {
+                    m_repo_filter.Set("");
+                } else {
+                    const auto& repos = RepoManager::Get().GetRepos();
+                    const auto index = static_cast<std::size_t>(index_out - 1);
+                    if (index < repos.size()) {
+                        m_repo_filter.Set(repos[index].url);
+                    } else {
+                        m_repo_filter.Set("");
+                    }
+                }
+                SetFilter();
+            }, repo_index);
+
             options->Add<SidebarEntryCallback>("Search"_i18n, [this](){
                 std::string out;
                 if (R_SUCCEEDED(swkbd::ShowText(out, "Search for app")) && !out.empty()) {
@@ -976,32 +1065,65 @@ Menu::Menu(u32 flags) : grid::Menu{"AppStore"_i18n, flags} {
                     log_write("got %s\n", out.c_str());
                 }
             });
+
+            options->Add<SidebarEntryCallback>("Repo Settings"_i18n, [](){
+                App::Push<multi_repo_settings::Menu>(0);
+            }, "Manage repositories, active repo and merge mode."_i18n);
         }})
     );
 
-    m_repo_download_state = ImageDownloadState::Progress;
-    curl::Api().ToFileAsync(
-        curl::Url{URL_JSON},
-        curl::Path{REPO_PATH},
-        curl::Flags{curl::Flag_Cache},
-        curl::StopToken{this->GetToken()},
-        curl::OnComplete{[this](auto& result){
-            if (result.success) {
-                m_repo_download_state = ImageDownloadState::Done;
-                if (HasFocus()) {
-                    ScanHomebrew();
-                }
-            } else {
-                m_repo_download_state = ImageDownloadState::Failed;
-            }
-        }
-    });
+    m_repo_download_success = 0;
+    m_repo_download_index = 0;
+    m_repo_download_list = RepoManager::Get().GetDownloadRepos();
+    if (m_repo_download_list.empty()) {
+        m_repo_download_state = ImageDownloadState::Failed;
+    } else {
+        m_repo_download_state = ImageDownloadState::Progress;
+        StartRepoDownload();
+    }
 
     OnLayoutChange();
 }
 
 Menu::~Menu() {
 
+}
+
+void Menu::StartRepoDownload() {
+    if (m_repo_download_index >= m_repo_download_list.size()) {
+        m_repo_download_state = m_repo_download_success ? ImageDownloadState::Done : ImageDownloadState::Failed;
+        if (m_repo_download_state == ImageDownloadState::Done && HasFocus()) {
+            ScanHomebrew();
+        }
+        return;
+    }
+
+    const auto index = m_repo_download_index;
+    const auto repo = m_repo_download_list[index];
+    const auto path = RepoManager::Get().GetRepoJsonCachePath(repo.url);
+    const auto cache_path = RepoManager::Get().GetRepoCachePath(repo.url);
+
+    fs::FsNativeSd fs;
+    fs.CreateDirectoryRecursively(cache_path);
+    fs.CreateDirectoryRecursively(fs::AppendPath(cache_path, "icons"));
+    fs.CreateDirectoryRecursively(fs::AppendPath(cache_path, "banners"));
+
+    SetSubHeading("Downloading repo " + std::to_string(index + 1) + " / " + std::to_string(m_repo_download_list.size()));
+
+    curl::Api().ToFileAsync(
+        curl::Url{repo.url},
+        curl::Path{path},
+        curl::Flags{curl::Flag_Cache},
+        curl::StopToken{this->GetToken()},
+        curl::OnComplete{[this](auto& result){
+            if (result.success) {
+                m_repo_download_success++;
+            }
+
+            m_repo_download_index++;
+            StartRepoDownload();
+        }}
+    );
 }
 
 void Menu::Update(Controller* controller, TouchInfo* touch) {
@@ -1032,8 +1154,12 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
     // max images per frame, in order to not hit io / gpu too hard.
     const int image_load_max = 2;
     int image_load_count = 0;
+    std::unordered_map<std::string, std::string> repo_name_map{};
+    for (const auto& repo : RepoManager::Get().GetRepos()) {
+        repo_name_map.emplace(repo.url, repo.name);
+    }
 
-    m_list->Draw(vg, theme, m_entries_current.size(), [this, &image_load_count](auto* vg, auto* theme, auto v, auto pos) {
+    m_list->Draw(vg, theme, m_entries_current.size(), [this, &image_load_count, &repo_name_map](auto* vg, auto* theme, auto v, auto pos) {
         const auto& [x, y, w, h] = v;
         const auto index = m_entries_current[pos];
         auto& e = m_entries[index];
@@ -1115,12 +1241,47 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
                 gfx::drawImage(vg, x + w - 30.f, y + 110, i_size, i_size, m_update.image, 20);
                 break;
         }
+
+        std::string repo_label = e.repo_source;
+        if (auto it = repo_name_map.find(e.repo_source); it != repo_name_map.end()) {
+            repo_label = it->second;
+        }
+
+        gfx::drawText(vg, x + 148.f, y + h - 8.f, 13.f, NVG_ALIGN_LEFT | NVG_ALIGN_BOTTOM, theme->GetColour(ThemeEntryID_TEXT_INFO), repo_label.c_str());
     });
 }
 
 void Menu::OnFocusGained() {
     MenuBase::OnFocusGained();
     // log_write("saying we got focus base: size: %zu count: %zu\n", repo_json.size(), m_entries.size());
+
+    const auto latest_repos = RepoManager::Get().GetDownloadRepos();
+    const auto same_repo_set = [&]() {
+        if (latest_repos.size() != m_repo_download_list.size()) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < latest_repos.size(); i++) {
+            if (latest_repos[i].url != m_repo_download_list[i].url) {
+                return false;
+            }
+        }
+        return true;
+    }();
+
+    if (!same_repo_set) {
+        m_entries.clear();
+        m_repo_download_success = 0;
+        m_repo_download_index = 0;
+        m_repo_download_list = latest_repos;
+
+        if (m_repo_download_list.empty()) {
+            m_repo_download_state = ImageDownloadState::Failed;
+        } else {
+            m_repo_download_state = ImageDownloadState::Progress;
+            StartRepoDownload();
+        }
+    }
 
     if (!m_default_image.image) {
         EntryLoadImageData(App::GetDefaultImageData(), m_default_image);
@@ -1138,7 +1299,7 @@ void Menu::OnFocusGained() {
             ScanHomebrew();
         }
     } else {
-        if (m_dirty) {
+        if (m_dirty && !m_entries_current.empty()) {
             m_dirty = false;
             const auto& current_entry = m_entries[m_entries_current[m_index]];
             Sort();
@@ -1163,6 +1324,12 @@ void Menu::OnFocusGained() {
 }
 
 void Menu::SetIndex(s64 index) {
+    if (m_entries_current.empty()) {
+        m_index = 0;
+        this->SetSubHeading("0 / 0");
+        return;
+    }
+
     m_index = index;
     if (!m_index) {
         m_list->SetYoff(0);
@@ -1175,7 +1342,45 @@ void Menu::ScanHomebrew() {
     App::SetBoostMode(true);
     ON_SCOPE_EXIT(App::SetBoostMode(false));
 
-    from_json(REPO_PATH, m_entries);
+    m_entries.clear();
+    m_entries_index_search.clear();
+    m_entries_index_author.clear();
+    m_entries_index_repo.clear();
+    for (auto& index : m_entries_index) {
+        index.clear();
+    }
+
+    const auto repos = RepoManager::Get().GetDownloadRepos();
+    std::unordered_map<std::string, std::size_t> entry_lookup{};
+    std::unordered_map<std::string, long> repo_priority{};
+
+    for (const auto& repo : repos) {
+        repo_priority[repo.url] = repo.priority;
+        const auto path = RepoManager::Get().GetRepoJsonCachePath(repo.url);
+        if (!fs::FsNativeSd().FileExists(path)) {
+            continue;
+        }
+
+        std::vector<Entry> parsed{};
+        from_json(path, parsed);
+
+        for (auto& entry : parsed) {
+            entry.repo_source = repo.url;
+            const auto it = entry_lookup.find(entry.name);
+            if (it == entry_lookup.end()) {
+                entry_lookup.emplace(entry.name, m_entries.size());
+                m_entries.emplace_back(entry);
+                continue;
+            }
+
+            auto& current = m_entries[it->second];
+            const auto current_priority = repo_priority[current.repo_source];
+            const auto candidate_priority = repo.priority;
+            if (ShouldReplaceDuplicate(current, entry, current_priority, candidate_priority)) {
+                current = entry;
+            }
+        }
+    }
 
     fs::FsNativeSd fs;
     if (R_FAILED(fs.GetFsOpenResult())) {
@@ -1210,9 +1415,7 @@ void Menu::ScanHomebrew() {
         }
 
         // fwiw, this is how N stores update info
-        e.updated_num = std::atoi(e.updated.c_str()); // day
-        e.updated_num += std::atoi(e.updated.c_str() + 3) * 100; // month
-        e.updated_num += std::atoi(e.updated.c_str() + 6) * 100 * 100; // year
+        e.updated_num = ParseUpdatedNum(e.updated);
 
         e.status = EntryStatus::Get;
         // if binary is present, check for it, if not avalible, report as not installed
@@ -1335,14 +1538,29 @@ void Menu::Sort() {
     };
 
 
-    char subheader[128]{};
-    std::snprintf(subheader, sizeof(subheader), "Filter: %s | Sort: %s | Order: %s"_i18n.c_str(), i18n::get(FILTER_STR[filter]).c_str(), i18n::get(SORT_STR[sort]).c_str(), i18n::get(ORDER_STR[order]).c_str());
+    std::string repo_filter = "All repos"_i18n;
+    if (!m_repo_filter.Get().empty()) {
+        for (const auto& repo : RepoManager::Get().GetRepos()) {
+            if (repo.url == m_repo_filter.Get()) {
+                repo_filter = repo.name;
+                break;
+            }
+        }
+    }
+
+    const auto subheader = "Filter: "_i18n + i18n::get(FILTER_STR[filter]) + " | Repo: " + repo_filter + " | Sort: " + i18n::get(SORT_STR[sort]) + " | Order: " + i18n::get(ORDER_STR[order]);
     SetTitleSubHeading(subheader);
 
     std::sort(m_entries_current.begin(), m_entries_current.end(), sorter);
 }
 
 void Menu::SortAndFindLastFile() {
+    if (m_entries_current.empty()) {
+        SetIndex(0);
+        Sort();
+        return;
+    }
+
     const auto name = GetEntry().name;
     Sort();
     SetIndex(0);
@@ -1372,7 +1590,23 @@ void Menu::SetFilter() {
     m_is_search = false;
     m_is_author = false;
 
-    m_entries_current = m_entries_index[m_filter.Get()];
+    const auto& repo_filter = m_repo_filter.Get();
+    const auto& category = m_entries_index[m_filter.Get()];
+    if (repo_filter.empty()) {
+        m_entries_current = category;
+    } else {
+        m_entries_index_repo.clear();
+        m_entries_index_repo.reserve(category.size());
+
+        for (const auto index : category) {
+            if (m_entries[index].repo_source == repo_filter) {
+                m_entries_index_repo.push_back(index);
+            }
+        }
+
+        m_entries_current = m_entries_index_repo;
+    }
+
     SetIndex(0);
     Sort();
 }
