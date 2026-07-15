@@ -18,6 +18,7 @@
 #include "ui/menus/game_menu.hpp"
 #include "ui/menus/save_menu.hpp"
 #include "ui/menus/appstore.hpp"
+#include "ui/menus/multi_repo_settings.hpp"
 
 #include "app.hpp"
 #include "log.hpp"
@@ -56,6 +57,10 @@ const MiscMenuEntry MISC_MENU_ENTRIES[] = {
     { .name = "Appstore", .title = "Appstore", .func = MiscMenuFuncGenerator<ui::menu::appstore::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
         "Download and update apps.\n\n"
         "Internet connection required." },
+
+    { .name = "RepoSettings", .title = "Repo Settings", .func = MiscMenuFuncGenerator<ui::menu::multi_repo_settings::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
+        "Manage AppStore repositories.\n\n"
+        "Add/remove repos, change order and switch merge mode." },
 
     { .name = "Games", .title = "Games", .func = MiscMenuFuncGenerator<ui::menu::game::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
         "View all installed games. "
@@ -398,6 +403,10 @@ MainMenu::MainMenu() {
             options->Add<SidebarEntryCallback>("Theme"_i18n, [](){
                 App::DisplayThemeOptions();
             }, "Customise the look of Sphaira by changing the theme"_i18n);
+
+            options->Add<SidebarEntryCallback>("Repo Settings"_i18n, [](){
+                App::Push<ui::menu::multi_repo_settings::Menu>(0);
+            }, "Manage AppStore repositories and merge mode."_i18n);
 
             options->Add<SidebarEntryArray>("Language"_i18n, language_items, [](s64& index_out){
                 App::SetLanguage(index_out);

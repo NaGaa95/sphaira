@@ -73,6 +73,7 @@ add_executable(sphaira
     source/ui/menus/homebrew.cpp
     source/ui/menus/irs_menu.cpp
     source/ui/menus/main_menu.cpp
+    source/ui/menus/multi_repo_settings.cpp
     source/ui/menus/menu_base.cpp
     source/ui/menus/save_menu.cpp
     source/ui/menus/themezer.cpp
@@ -118,6 +119,7 @@ add_executable(sphaira
     source/threaded_file_transfer.cpp
     source/title_info.cpp
     source/minizip_helper.cpp
+    source/repo_manager.cpp
 
     source/utils/utils.cpp
     source/utils/audio.cpp
