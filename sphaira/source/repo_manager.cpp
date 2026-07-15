@@ -173,7 +173,7 @@ auto RepoManager::AddRepo(const std::string& url, const std::string& name) -> bo
     }
 
     for (const auto& repo : m_repos) {
-        if (!strcasecmp(repo.url.c_str(), trimmed_url.c_str())) {
+        if (repo.url == trimmed_url) {
             log_write("[Repo] duplicate repo ignored: %s\n", trimmed_url.c_str());
             return false;
         }
@@ -309,6 +309,8 @@ auto RepoManager::GetDownloadRepos() const -> std::vector<RepoConfig> {
 
 auto RepoManager::GetRepoCachePath(std::string_view repo_url) const -> fs::FsPath {
     fs::FsPath out;
+    // CRC32 keeps cache paths short and deterministic for filesystem usage.
+    // Collisions are possible in theory, but unlikely for user-configured repo URLs.
     const auto hash = crc32Calculate(repo_url.data(), repo_url.size());
     std::snprintf(out, sizeof(out), "/switch/sphaira/cache/appstore/repos/%08X", hash);
     return out;
