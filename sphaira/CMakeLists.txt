@@ -75,6 +75,7 @@ add_executable(sphaira
     source/ui/menus/main_menu.cpp
     source/ui/menus/menu_base.cpp
     source/ui/menus/save_menu.cpp
+    source/ui/menus/storage_menu.cpp
     source/ui/menus/themezer.cpp
     source/ui/menus/ghdl.cpp
     source/ui/menus/usb_menu.cpp

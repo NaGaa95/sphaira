@@ -19,6 +19,7 @@
 #include "ui/menus/gc_menu.hpp"
 #include "ui/menus/game_menu.hpp"
 #include "ui/menus/save_menu.hpp"
+#include "ui/menus/storage_menu.hpp"
 #include "ui/menus/appstore.hpp"
 
 #include "app.hpp"
@@ -309,6 +310,10 @@ const MiscMenuEntry MISC_MENU_ENTRIES[] = {
     { .name = "Games", .title = "Games", .func = MiscMenuFuncGenerator<ui::menu::game::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
         "View all installed games. "
         "In this menu you can launch, backup, create savedata and much more." },
+
+    { .name = "Storage", .title = "Data Management", .func = MiscMenuFuncGenerator<ui::menu::storage::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
+        "See how much space each game uses on the microSD card and in system memory. "
+        "Games are listed largest first, so it's easy to find what to remove." },
 
     { .name = "FileBrowser", .title = "FileBrowser", .func = MiscMenuFuncGenerator<ui::menu::filebrowser::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
         "Browse files on you SD Card. "
