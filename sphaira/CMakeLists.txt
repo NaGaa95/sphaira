@@ -116,6 +116,7 @@ add_executable(sphaira
     source/app.cpp
     source/download.cpp
     source/dumper.cpp
+    source/game_lang.cpp
     source/option.cpp
     source/evman.cpp
     source/fs.cpp

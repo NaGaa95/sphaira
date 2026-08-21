@@ -24,6 +24,8 @@ struct Entry {
     u64 app_id{};
     u8 last_event{};
     NacpLanguageEntry lang{};
+    // NacpStruct::supported_language_flag, 0 = unknown.
+    u32 supported_language_flag{};
     int image{};
     bool selected{};
     u64 last_played{};

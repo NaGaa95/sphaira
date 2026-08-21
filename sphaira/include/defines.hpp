@@ -696,6 +696,7 @@ enum class SphairaResult : Result {
 
     // an http source's transfer ended before a read was filled.
     YatiHttpReadFailed,
+    GameLangBadIndex,
 };
 
 #define MAKE_SPHAIRA_RESULT_ENUM(x) Result_##x =  MAKERESULT(Module_Sphaira, (Result)SphairaResult::x)
@@ -860,6 +861,7 @@ enum : Result {
     MAKE_SPHAIRA_RESULT_ENUM(MspDuplicateEntry),
     MAKE_SPHAIRA_RESULT_ENUM(MspNoPayload),
     MAKE_SPHAIRA_RESULT_ENUM(YatiHttpReadFailed),
+    MAKE_SPHAIRA_RESULT_ENUM(GameLangBadIndex),
 };
 
 #undef MAKE_SPHAIRA_RESULT_ENUM
