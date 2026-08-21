@@ -611,6 +611,10 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
             }
 
             if (m_entries.size()) {
+                options->Add<SidebarEntryCallback>("View application content"_i18n, [this](){
+                    App::Push<meta::Menu>(m_entries[m_index]);
+                });
+
                 options->Add<SidebarEntryCallback>("Launch random game"_i18n, [this](){
                     const auto random_index = randomGet64() % std::size(m_entries);
                     auto& e = m_entries[random_index];
