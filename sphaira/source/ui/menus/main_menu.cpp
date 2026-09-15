@@ -8,6 +8,7 @@
 #include "ui/scrollable_text.hpp"
 #include "ui/nvg_util.hpp"
 
+#include "ui/menus/album_menu.hpp"
 #include "ui/menus/homebrew.hpp"
 #include "ui/menus/filebrowser.hpp"
 #include "ui/menus/irs_menu.hpp"
@@ -324,6 +325,10 @@ const MiscMenuEntry MISC_MENU_ENTRIES[] = {
         "View save data for each user. "
         "You can backup and restore saves.\n\n"
         "Experimental support for backing up system saves is possible." },
+
+    { .name = "Album", .title = "Album", .func = MiscMenuFuncGenerator<ui::menu::album::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
+        "Browse the screenshots and clips saved on the console. "
+        "Captures can be viewed and deleted from here." },
 
     { .name = "Themezer", .title = "Themezer", .func = MiscMenuFuncGenerator<ui::menu::themezer::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
         "Download themes from themezer.net. "

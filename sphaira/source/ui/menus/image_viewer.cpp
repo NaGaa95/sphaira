@@ -29,7 +29,19 @@ Menu::Menu(fs::Fs* fs, const fs::FsPath& path) : m_path{path} {
         flags = ImageFlag_JPEG;
     }
 
-    const auto result = ImageLoadFromMemory(m_image_buf, flags);
+    Load(m_image_buf, flags);
+}
+
+Menu::Menu(std::span<const u8> data, u32 flags) {
+    SetAction(Button::B, Action{[this](){
+        SetPop();
+    }});
+
+    Load(data, flags);
+}
+
+void Menu::Load(std::span<const u8> data, u32 flags) {
+    const auto result = ImageLoadFromMemory(data, flags);
     if (result.data.empty()) {
         SetPop();
         return;

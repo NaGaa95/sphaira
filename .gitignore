@@ -1,5 +1,6 @@
 nxbuild
 build*/
+build/*
 *.elf
 *.nro
 *.nacp

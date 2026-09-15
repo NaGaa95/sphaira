@@ -2,12 +2,16 @@
 
 #include "ui/widget.hpp"
 #include "fs.hpp"
+#include <span>
 #include <vector>
 
 namespace sphaira::ui::menu::imageview {
 
 struct Menu final : Widget {
     Menu(fs::Fs* fs, const fs::FsPath& path);
+    // for an image that is already in memory, ie. one handed over by the
+    // album, which has no path to read back from.
+    Menu(std::span<const u8> data, u32 flags);
     ~Menu();
 
     void Update(Controller* controller, TouchInfo* touch) override;
@@ -18,6 +22,9 @@ struct Menu final : Widget {
     }
 
     void UpdateSize();
+
+private:
+    void Load(std::span<const u8> data, u32 flags);
 
 private:
     const fs::FsPath m_path;

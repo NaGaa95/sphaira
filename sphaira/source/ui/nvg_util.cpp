@@ -417,6 +417,47 @@ void drawSpinner(NVGcontext* vg, const Theme* theme, float cx, float cy, float r
     nvgRestore(vg);
 }
 
+auto drawQrCode(NVGcontext* vg, float x, float y, float max_size, const qr::Matrix& matrix) -> float {
+    if (matrix.IsEmpty() || ClipRect(x, y)) {
+        return 0.F;
+    }
+
+    // the quiet zone is part of the code, without it scanners struggle.
+    constexpr int QUIET = 4;
+    const auto count = matrix.GetSize();
+    const auto total = count + QUIET * 2;
+
+    // whole pixels per module, otherwise the edges land between pixels and
+    // the whole thing turns into a blurry mess.
+    const auto scale = std::max(1.F, std::floor(max_size / total));
+    const auto size = scale * total;
+
+    // deliberately not themed, a QR code has to be dark on light to scan.
+    drawRect(vg, x, y, size, size, nvgRGB(0xFF, 0xFF, 0xFF), 4.F);
+
+    // one path for the lot, merging each row into as few rects as possible.
+    nvgBeginPath(vg);
+    for (int my = 0; my < count; my++) {
+        int run = 0;
+        for (int mx = 0; mx <= count; mx++) {
+            if (mx < count && matrix.IsDark(mx, my)) {
+                run++;
+                continue;
+            }
+
+            if (run) {
+                nvgRect(vg, x + (QUIET + mx - run) * scale, y + (QUIET + my) * scale, run * scale, scale);
+                run = 0;
+            }
+        }
+    }
+
+    nvgFillColor(vg, nvgRGB(0, 0, 0));
+    nvgFill(vg);
+
+    return size;
+}
+
 #define HIGHLIGHT_SPEED 350.0
 
 static double highlightGradientX = 0;

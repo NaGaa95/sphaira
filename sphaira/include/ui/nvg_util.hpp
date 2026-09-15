@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nanovg.h"
+#include "qrcode.hpp"
 #include "ui/types.hpp"
 #include "ui/scrolling_text.hpp"
 
@@ -43,6 +44,11 @@ void drawScrollbar2(NVGcontext*, const Theme*, s64 index_off, s64 count, s64 row
 void drawAppLable(NVGcontext* vg, const Theme*, ScrollingText& st, float x, float y, float w, const char* name);
 
 void drawSpinner(NVGcontext* vg, const Theme*, float cx, float cy, float r, float t);
+
+// draws the code, and the quiet zone around it, as large as it can within
+// max_size. returns the size actually drawn, which is a whole number of
+// modules and thus usually smaller than max_size.
+auto drawQrCode(NVGcontext* vg, float x, float y, float max_size, const qr::Matrix& matrix) -> float;
 
 void updateHighlightAnimation();
 void getHighlightAnimation(float* gradientX, float* gradientY, float* color);

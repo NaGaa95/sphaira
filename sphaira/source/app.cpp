@@ -5,6 +5,7 @@
 #include "ui/progress_box.hpp"
 #include "ui/error_box.hpp"
 
+#include "ui/menus/album_menu.hpp"
 #include "ui/menus/main_menu.hpp"
 
 #include "app.hpp"
@@ -359,7 +360,8 @@ void appplet_hook_calback(AppletHookType type, void *param) {
 
         case AppletHookType_OnAlbumScreenShotTaken:
             log_write("[APPLET] AppletHookType_OnAlbumScreenShotTaken\n");
-            // App::Notify("AppletHookType_OnAlbumScreenShotTaken");
+            // so that an open album menu picks the new capture up.
+            ui::menu::album::SignalChange();
             break;
 
         case AppletHookType_RequestToDisplay:
