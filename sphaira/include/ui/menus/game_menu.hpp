@@ -82,6 +82,7 @@ private:
     void StopPlaytimeWorker(bool apply_results);
     void ApplyPlaytimeResults();
     void SyncEntryToMaster(const Entry& entry);
+    void ConfirmLaunch(Entry& e);
     void SetPlayStatsEnabled(bool enable);
     void SetMissingContentFilter(bool enable);
     void StartMissingContentScan();

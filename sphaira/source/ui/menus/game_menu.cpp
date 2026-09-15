@@ -513,17 +513,17 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
         std::make_pair(Button::B, Action{"Back"_i18n, [this](){
             SetPop();
         }}),
-        std::make_pair(Button::A, Action{"Launch"_i18n, [this](){
-            if (m_entries.empty()) {
-                return;
-            }
-            LaunchEntry(m_entries[m_index]);
-        }}),
-        std::make_pair(Button::Y, Action{"View Content"_i18n, [this](){
+        std::make_pair(Button::A, Action{"View Content"_i18n, [this](){
             if (m_entries.empty()) {
                 return;
             }
             App::Push<meta::Menu>(m_entries[m_index]);
+        }}),
+        std::make_pair(Button::Y, Action{"Launch"_i18n, [this](){
+            if (m_entries.empty()) {
+                return;
+            }
+            ConfirmLaunch(m_entries[m_index]);
         }}),
         std::make_pair(Button::X, Action{"Options"_i18n, [this](){
             auto options = std::make_unique<Sidebar>("Game Options"_i18n, Sidebar::Side::RIGHT);
@@ -611,24 +611,15 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
             }
 
             if (m_entries.size()) {
-                options->Add<SidebarEntryCallback>("View application content"_i18n, [this](){
-                    App::Push<meta::Menu>(m_entries[m_index]);
-                });
+                if (IsTab()) {
+                    options->Add<SidebarEntryCallback>("Launch"_i18n, [this](){
+                        ConfirmLaunch(m_entries[m_index]);
+                    });
+                }
 
                 options->Add<SidebarEntryCallback>("Launch random game"_i18n, [this](){
                     const auto random_index = randomGet64() % std::size(m_entries);
-                    auto& e = m_entries[random_index];
-                    LoadControlEntry(e, true);
-                    SyncEntryToMaster(e);
-
-                    App::Push<OptionBox>(
-                        i18n::Reorder("Launch ", e.GetName()) + '?',
-                        "Back"_i18n, "Launch"_i18n, 1, [this, &e](auto op_index){
-                            if (op_index && *op_index) {
-                                LaunchEntry(e);
-                            }
-                        }, e.image
-                    );
+                    ConfirmLaunch(m_entries[random_index]);
                 });
 
                 auto export_nsp = options->Add<SidebarEntryCallback>("Export NSP"_i18n, [this](){
@@ -1452,6 +1443,20 @@ void Menu::SortAndFindLastFile(bool scan) {
         }
         SetIndex(index);
     }
+}
+
+void Menu::ConfirmLaunch(Entry& e) {
+    LoadControlEntry(e, true);
+    SyncEntryToMaster(e);
+
+    App::Push<OptionBox>(
+        i18n::Reorder("Launch ", e.GetName()) + '?',
+        "Back"_i18n, "Launch"_i18n, 1, [this, &e](auto op_index){
+            if (op_index && *op_index) {
+                LaunchEntry(e);
+            }
+        }, e.image
+    );
 }
 
 void Menu::FreeEntries() {
