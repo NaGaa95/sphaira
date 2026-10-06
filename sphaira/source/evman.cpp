@@ -42,7 +42,9 @@ auto pop() -> std::optional<EventData> {
     if (events.empty()) {
         return std::nullopt;
     }
-    auto e = events.front();
+    // moved rather than copied: an event carries its whole result, and a page of
+    // catalog is two dozen entries' worth of strings to duplicate for nothing.
+    auto e = std::move(events.front());
     events.pop_front();
     return e;
 }

@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <functional>
+#include <stop_token>
 #include <unordered_map>
 #include <curl/curl.h>
 
@@ -93,7 +94,7 @@ void update_devoptab_for_read_only(devoptab_t* devoptab, bool read_only);
 struct PushPullThreadData {
     static constexpr size_t MAX_BUFFER_SIZE = 1024 * 64; // 64KB max buffer
 
-    explicit PushPullThreadData(CURL* _curl);
+    explicit PushPullThreadData(CURL* _curl, std::stop_token token = {});
     virtual ~PushPullThreadData();
 
     Result CreateAndStart();
@@ -123,6 +124,7 @@ public:
 
 private:
     Thread thread{};
+    const std::stop_token stop_token;
 };
 
 struct MountConfig {

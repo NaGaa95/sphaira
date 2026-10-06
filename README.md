@@ -14,6 +14,7 @@ A homebrew menu for the Nintendo Switch.
 ![Img](assets/screenshots/appstore.jpg) | ![Img](assets/screenshots/appstore_page.jpg)
 ![Img](assets/screenshots/file_browser.jpg) | ![Img](assets/screenshots/launch_options.jpg)
 ![Img](assets/screenshots/themezer.jpg) | ![Img](assets/screenshots/web.jpg)
+![Img](assets/screenshots/ownfoil_main.jpg) | ![Img](assets/screenshots/ownfoil_details.jpg)
 
 ## Bug reports
 
@@ -79,6 +80,17 @@ A few NTFS notes:
   in the HDD options forces it, at the cost of the saved Windows session.
 - NTFS is noticeably slower than exFAT. For installing large files, exFAT is the better choice.
 
+### Ownfoil (install)
+
+[Ownfoil](https://github.com/a1ex4/ownfoil) is a self-hosted Nintendo Switch library manager, automating library curation tasks and making backups available to install directly on your console.
+
+Local servers are found automatically on the network, so there is no ip or port to type in. Each server can have both a local and a remote address, over http or https, and signs in with a user account.
+
+The library is browsed by *content*, not by files: pick a game, a version and the dlc you want, and Sphaira works out which files it needs, however they are bundled (several nsp, or a multi content nsp / xci).  
+Only what you picked is downloaded and installed. nsp, nsz, xci and xcz are supported, and a download survives a broken connection, resuming for up to 60s.
+
+Entries are listed under `New games`, `Updates`, `DLC`, `All games` and `Search`, paginated and sortable. All artwork is served by the Ownfoil server, so the switch never connects to Nintendo's servers.
+
 ## Building from source
 
 You will first need to install [devkitPro](https://devkitpro.org/wiki/Getting_Started).
@@ -103,6 +115,21 @@ cmake --build --preset MinSizeRel
 ```
 
 The output will be found in `build/MinSizeRel/sphaira.nro`
+
+### Using Docker
+
+If you would rather not install and manage devkitPro on your machine, the nro can be built in a docker container instead, with the following tool:
+
+```sh
+tools/nro-builder/build.sh [Release|Dev|Lite] [--send]
+```
+
+The first run builds the image, which holds the same devkitA64 toolchain the release workflow uses, plus ninja and ccache.
+The first build takes longer but after that only what you changed is compiled.
+
+`Release` is the default and is what the release workflow publishes. `Dev` skips LTO, so a one file change is immediate.
+
+The output will be found in `build/<preset>/sphaira.nro`. Add `--send` to send it straight to the console over `nxlink` (enable it in the Network options) and follow its log.
 
 ## Credits
 

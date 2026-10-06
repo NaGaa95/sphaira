@@ -5,6 +5,7 @@
 #include "ui/progress_box.hpp"
 #include "ui/error_box.hpp"
 
+#include "ui/menus/album_menu.hpp"
 #include "ui/menus/main_menu.hpp"
 
 #include "app.hpp"
@@ -359,7 +360,8 @@ void appplet_hook_calback(AppletHookType type, void *param) {
 
         case AppletHookType_OnAlbumScreenShotTaken:
             log_write("[APPLET] AppletHookType_OnAlbumScreenShotTaken\n");
-            // App::Notify("AppletHookType_OnAlbumScreenShotTaken");
+            // so that an open album menu picks the new capture up.
+            ui::menu::album::SignalChange();
             break;
 
         case AppletHookType_RequestToDisplay:
@@ -587,6 +589,11 @@ void App::Loop() {
                     log_write("[DownloadEventData] got event\n");
                     if (arg.callback && !arg.stoken.stop_requested()) {
                         arg.callback(arg.result);
+                    }
+                } else if constexpr(std::is_same_v<T, evman::CallbackEventData>) {
+                    log_write("[CallbackEventData] got event\n");
+                    if (arg.callback && !arg.stoken.stop_requested()) {
+                        arg.callback();
                     }
                 } else {
                     static_assert(false, "non-exhaustive visitor!");
@@ -2261,6 +2268,12 @@ void App::DisplayAdvancedOptions(bool left_side) {
         i18n::get("transfer_boost_info",
             "Enables boost mode during transfers which can improve transfer speed. "
             "This sets the CPU to 1785mhz and lowers the GPU 76mhz"));
+
+    options->Add<ui::SidebarEntryBool>("Album share PIN"_i18n, App::GetApp()->m_album_web_pin,
+        i18n::get("album_web_pin_info",
+            "If enabled, browsing the album from a phone asks for the PIN shown on the console.\n\n"
+            "Leaving this off means anyone on the same network can open the album whilst it is "
+            "being shared."));
 
     options->Add<ui::SidebarEntryArray>("Text scroll speed"_i18n, text_scroll_speed_items, [](s64& index_out){
         App::SetTextScrollSpeed(index_out);

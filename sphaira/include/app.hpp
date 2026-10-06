@@ -398,6 +398,7 @@ public:
     option::OptionBool m_mtp_show_install{"mtp", "show_install", true};
     option::OptionBool m_mtp_show_mounts{"mtp", "show_mounts", false};
     option::OptionBool m_mtp_show_speedtest{"mtp", "show_speedtest", false};
+    option::OptionBool m_album_web_pin{"album", "web_pin", false};
 
     std::shared_ptr<fs::FsNativeSd> m_fs{};
     audio::SongID m_background_music{};

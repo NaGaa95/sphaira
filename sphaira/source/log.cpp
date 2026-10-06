@@ -5,6 +5,10 @@
 #include <ctime>
 #include <atomic>
 #include <unistd.h>
+#include <sys/time.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <switch.h>
 
 #if sphaira_USE_LOG
@@ -17,11 +21,14 @@ std::atomic_bool g_file_open{};
 Mutex g_mutex;
 
 void log_write_arg_internal(const char* s, std::va_list* v) {
-    const auto t = std::time(nullptr);
+    // to the millisecond: the log is how latency gets measured on the console.
+    timeval tv{};
+    gettimeofday(&tv, nullptr);
+    const auto t = static_cast<std::time_t>(tv.tv_sec);
     const auto tm = std::localtime(&t);
 
     char buf[512];
-    const auto len = std::snprintf(buf, sizeof(buf), "[%02u:%02u:%02u] -> ", tm->tm_hour, tm->tm_min, tm->tm_sec);
+    const auto len = std::snprintf(buf, sizeof(buf), "[%02u:%02u:%02u.%03u] -> ", tm->tm_hour, tm->tm_min, tm->tm_sec, static_cast<unsigned>(tv.tv_usec / 1000));
     std::vsnprintf(buf + len, sizeof(buf) - len, s, *v);
 
     SCOPED_MUTEX(&g_mutex);
@@ -63,8 +70,20 @@ auto log_nxlink_init() -> bool {
         return false;
     }
 
-    nxlink_socket = nxlinkConnectToHost(true, false);
-    return nxlink_socket != 0;
+    // -1 when the app wasn't launched over nxlink; kept, every log line would be
+    // formatted and written to nowhere.
+    const auto sock = nxlinkConnectToHost(true, false);
+    if (sock < 0) {
+        return false;
+    }
+
+    // every line is a small write that the next one waits on, so nagle leaves each
+    // sitting on the host's delayed ack and skews the timings being measured.
+    const int nodelay = 1;
+    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+
+    nxlink_socket = sock;
+    return true;
 }
 
 void log_file_exit() {

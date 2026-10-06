@@ -72,7 +72,11 @@ else()
 endif()
 
 add_executable(sphaira
+    source/ui/menus/album_menu.cpp
+    source/ui/menus/album_share_menu.cpp
     source/ui/menus/appstore.cpp
+    source/ui/menus/ownfoil.cpp
+    source/ui/menus/ownfoil_title.cpp
     source/ui/menus/file_viewer.cpp
     source/ui/menus/image_viewer.cpp
     source/ui/menus/filebrowser.cpp
@@ -98,6 +102,7 @@ add_executable(sphaira
     source/ui/nvg_util.cpp
     source/ui/option_box.cpp
     source/ui/popup_list.cpp
+    source/ui/popup_multi_select.cpp
     source/ui/progress_box.cpp
     source/ui/scrollable_text.cpp
     source/ui/sidebar.cpp
@@ -118,8 +123,11 @@ add_executable(sphaira
     source/location.cpp
     source/log.cpp
     source/main.cpp
+    source/album_caps.cpp
+    source/album_server.cpp
     source/nro.cpp
     source/nxlink.cpp
+    source/qrcode.cpp
     source/owo.cpp
     source/swkbd.cpp
     source/web.cpp
@@ -147,6 +155,10 @@ add_executable(sphaira
     source/utils/devoptab_game.cpp
     source/utils/devoptab_mounts.cpp
     source/utils/devoptab.cpp
+    source/utils/ownfoil.cpp
+    source/utils/ownfoil_discovery.cpp
+    source/utils/ownfoil_api.cpp
+    source/utils/ownfoil_installed.cpp
 
     source/usb/base.cpp
     source/usb/usbds.cpp
@@ -159,6 +171,7 @@ add_executable(sphaira
     source/yati/container/nsp.cpp
     source/yati/container/xci.cpp
     source/yati/source/file.cpp
+    source/yati/source/http.cpp
     source/yati/source/stream.cpp
     source/yati/source/stream_file.cpp
 
@@ -231,7 +244,7 @@ FetchContent_Declare(libpulsar
 
 FetchContent_Declare(nanovg
     GIT_REPOSITORY https://github.com/ITotalJustice/nanovg-deko3d.git
-    GIT_TAG 845c9fc
+    GIT_TAG 2acb0f3
 )
 
 FetchContent_Declare(stb
@@ -538,8 +551,8 @@ endif()
 
 if (ENABLE_AUDIO_MP3)
     FetchContent_Declare(id3v2lib
-        GIT_REPOSITORY https://github.com/larsbs/id3v2lib.git
-        GIT_TAG 141ffb8
+        GIT_REPOSITORY https://github.com/R-YaTian/id3v2lib.git
+        GIT_TAG 43e4592
     )
 
     FetchContent_MakeAvailable(id3v2lib)
@@ -697,15 +710,6 @@ add_dependencies(sphaira hbl_nso hbl_npdm)
 target_compile_options(sphaira PRIVATE
     --embed-dir=${CMAKE_SOURCE_DIR}/assets/embed
     --embed-dir=${CMAKE_BINARY_DIR}/hbl
-)
-
-# add nanovg shaders to romfs
-dkp_install_assets(sphaira_romfs
-    DESTINATION shaders
-    TARGETS
-        fill_aa_fsh
-        fill_fsh
-        fill_vsh
 )
 
 # create nacp

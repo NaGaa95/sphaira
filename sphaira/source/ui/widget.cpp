@@ -136,6 +136,14 @@ auto Widget::GetUiButtons(const Actions& actions, const Vec2& button_pos) -> uiB
 
         uiButton ui_button{button, action.m_hint};
 
+        // a ZL with no hint of its own beside a ZR that has one steps the same
+        // thing the other way, so both glyphs are drawn in front of that hint.
+        if (button == Button::R2) {
+            if (const auto it = actions.find(Button::L2); it != actions.end() && it->second.m_hint.empty()) {
+                ui_button.m_button_str = std::string{gfx::getButton(Button::L2)} + " " + gfx::getButton(Button::R2);
+            }
+        }
+
         bool should_swap = false;
         for (auto [left, right] : swap_buttons) {
             if (button == right && draw_actions.size() && draw_actions.back().m_button == left) {

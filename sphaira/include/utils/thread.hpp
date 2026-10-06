@@ -41,6 +41,11 @@ struct Async final {
         WaitForExit();
     }
 
+    // false if the thread could not be created or started.
+    auto IsRunning() const -> bool {
+        return m_running;
+    }
+
     void WaitForExit() {
         if (m_running) {
             threadWaitForExit(&m_thread);

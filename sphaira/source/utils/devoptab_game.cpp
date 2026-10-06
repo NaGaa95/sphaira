@@ -246,29 +246,14 @@ bool Device::Mount() {
 
     if (m_entries.empty()) {
         m_entries.reserve(1000);
-        std::vector<NsApplicationRecord> record_list(1000);
-        s32 offset{};
 
-        while (true) {
-            s32 record_count{};
-            if (R_FAILED(nsListApplicationRecord(record_list.data(), record_list.size(), offset, &record_count))) {
-                log_write("failed to list application records at offset: %d\n", offset);
-            }
+        title::ForEachApplicationRecord([this](std::span<const NsApplicationRecord> records) {
+            title::PushAsync(records);
 
-            // finished parsing all entries.
-            if (!record_count) {
-                break;
-            }
-
-            title::PushAsync(std::span(record_list.data(), record_count));
-
-            for (s32 i = 0; i < record_count; i++) {
-                const auto& e = record_list[i];
+            for (const auto& e : records) {
                 m_entries.emplace_back(game::Entry{e.application_id, e.last_event});
             }
-
-            offset += record_count;
-        }
+        });
     }
 
     log_write("[GAME] mounted with %zu entries\n", m_entries.size());

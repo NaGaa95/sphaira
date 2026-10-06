@@ -29,18 +29,57 @@ Menu::Menu(fs::Fs* fs, const fs::FsPath& path) : m_path{path} {
         flags = ImageFlag_JPEG;
     }
 
-    const auto result = ImageLoadFromMemory(m_image_buf, flags);
+    if (!Load(m_image_buf, flags)) {
+        SetPop();
+    }
+}
+
+Menu::Menu(std::span<const u8> data, u32 flags, const NavigateCallback& navigate) : m_navigate{navigate} {
+    SetAction(Button::B, Action{[this](){
+        SetPop();
+    }});
+
+    if (m_navigate) {
+        SetAction(Button::L, Action{"Prev"_i18n, [this](){
+            Navigate(-1);
+        }});
+
+        SetAction(Button::R, Action{"Next"_i18n, [this](){
+            Navigate(+1);
+        }});
+    }
+
+    if (!Load(data, flags)) {
+        SetPop();
+    }
+}
+
+void Menu::Navigate(int direction) {
+    std::vector<u8> buf;
+    if (m_navigate(direction, buf) && !buf.empty()) {
+        Load(buf, m_flags);
+    }
+}
+
+auto Menu::Load(std::span<const u8> data, u32 flags) -> bool {
+    const auto result = ImageLoadFromMemory(data, flags);
     if (result.data.empty()) {
-        SetPop();
-        return;
+        return false;
     }
 
-    m_image = nvgCreateImageRGBA(App::GetVg(), result.w, result.h, 0, result.data.data());
-    if (m_image <= 0) {
-        SetPop();
-        return;
+    const auto image = nvgCreateImageRGBA(App::GetVg(), result.w, result.h, 0, result.data.data());
+    if (image <= 0) {
+        return false;
     }
 
+    // stepping through a list loads over the top of the last one.
+    if (m_image) {
+        nvgDeleteImage(App::GetVg(), m_image);
+    }
+
+    m_image = image;
+    m_flags = flags;
+    m_xoff = m_yoff = 0;
     m_image_width = result.w;
     m_image_height = result.h;
 
@@ -50,6 +89,7 @@ Menu::Menu(fs::Fs* fs, const fs::FsPath& path) : m_path{path} {
     m_zoom = std::min(ws, hs);
 
     UpdateSize();
+    return true;
 }
 
 Menu::~Menu() {
@@ -90,6 +130,24 @@ void Menu::Update(Controller* controller, TouchInfo* touch) {
 
     if (controller->Got(kdown, Button::LS_ANY) || controller->Got(kdown, Button::RS_ANY)) {
         UpdateSize();
+    }
+
+    // the dpad and the shoulders always step through the list. so does the
+    // stick, but only whilst the whole image is on screen, as there is
+    // nothing for it to pan then.
+    if (m_navigate) {
+        const auto can_pan = GetW() > SCREEN_WIDTH;
+
+        // Button::LEFT / RIGHT are AnyLeft / AnyRight, which the stick sets as
+        // well, so the dpad has to be named outright here.
+        const auto next = controller->GotDown(Button::DPAD_RIGHT) || (!can_pan && controller->GotDown(Button::LS_RIGHT));
+        const auto prev = controller->GotDown(Button::DPAD_LEFT) || (!can_pan && controller->GotDown(Button::LS_LEFT));
+
+        if (next) {
+            Navigate(+1);
+        } else if (prev) {
+            Navigate(-1);
+        }
     }
 }
 

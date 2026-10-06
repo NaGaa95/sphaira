@@ -18,6 +18,7 @@
 
 #include "ui/progress_box.hpp"
 #include "ui/menus/game_menu.hpp"
+#include "ui/menus/ownfoil.hpp"
 
 #include "app.hpp"
 #include "i18n.hpp"
@@ -899,6 +900,7 @@ Yati::~Yati() {
 
     // force update the game menu, as we may have installed a game.
     ui::menu::game::SignalChange();
+    ui::menu::ownfoil::SignalInstalled();
 }
 
 Result Yati::Setup(const ConfigOverride& override) {
@@ -919,6 +921,7 @@ Result Yati::Setup(const ConfigOverride& override) {
     config.convert_to_standard_crypto = override.convert_to_standard_crypto.value_or(App::GetApp()->m_convert_to_standard_crypto.Get());
     config.lower_master_key = override.lower_master_key.value_or(App::GetApp()->m_lower_master_key.Get());
     config.lower_system_version = override.lower_system_version.value_or(App::GetApp()->m_lower_system_version.Get());
+    config.title_ids = override.title_ids;
     storage_id = config.sd_card_install ? NcmStorageId_SdCard : NcmStorageId_BuiltInUser;
 
     R_TRY(source->GetOpenResult());
@@ -1238,6 +1241,9 @@ Result Yati::ShouldSkip(const CnmtCollection& cnmt, bool& skip) {
     if (!skip) {
         if (!(cnmt.key.type & 0x80)) {
             log_write("\tskipping: invalid: %u\n", cnmt.key.type);
+            skip = true;
+        } else if (!config.title_ids.empty() && std::ranges::find(config.title_ids, cnmt.key.id) == config.title_ids.end()) {
+            log_write("\tskipping: not selected: %016lX\n", cnmt.key.id);
             skip = true;
         } else if (config.skip_base && cnmt.key.type == NcmContentMetaType_Application) {
             log_write("\tskipping: [NcmContentMetaType_Application]\n");

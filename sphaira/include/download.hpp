@@ -24,6 +24,11 @@ enum {
 
     // sets CURLOPT_NOBODY.
     Flag_NoBody = 1 << 1,
+
+    // clears CURLOPT_FAILONERROR, so an error response's body is delivered and a
+    // server that explains itself can be quoted back. note the transfer then
+    // counts as a success: the caller has to check result.code itself.
+    Flag_KeepErrorBody = 1 << 2,
 };
 
 enum class Priority {
@@ -89,6 +94,15 @@ struct UserPass {
     UserPass(const std::string& user, const std::string& pass) : m_user{user}, m_pass{pass} {}
     std::string m_user;
     std::string m_pass;
+};
+
+// sends the auth header up front instead of waiting for the server's 401:
+// libcurl's CURLAUTH_ANY default always probes unauthenticated first. only has
+// an effect alongside a non-empty UserPass.
+struct PreemptiveAuth {
+    PreemptiveAuth() = default;
+    PreemptiveAuth(bool enable) : m_enable{enable} {}
+    bool m_enable{};
 };
 
 struct UploadInfo {
@@ -297,6 +311,7 @@ struct Api {
     auto& GetPort() const { return m_port.m_port; }
     auto& GetCustomRequest() const { return m_custom_request.m_str; }
     auto& GetUserPass() const { return m_userpass; }
+    auto& GetPreemptiveAuth() const { return m_preemptive_auth.m_enable; }
     auto& GetBearer() const { return m_bearer.m_str; }
     auto& GetPubKey() const { return m_pub_key.m_str; }
     auto& GetPrivKey() const { return m_priv_key.m_str; }
@@ -315,6 +330,7 @@ struct Api {
     void SetOption(Port&& v) { m_port = v; }
     void SetOption(CustomRequest&& v) { m_custom_request = v; }
     void SetOption(UserPass&& v) { m_userpass = v; }
+    void SetOption(PreemptiveAuth&& v) { m_preemptive_auth = v; }
     void SetOption(Bearer&& v) { m_bearer = v; }
     void SetOption(PubKey&& v) { m_pub_key = v; }
     void SetOption(PrivKey&& v) { m_priv_key = v; }
@@ -345,6 +361,7 @@ private:
     Port m_port{};
     CustomRequest m_custom_request{};
     UserPass m_userpass{};
+    PreemptiveAuth m_preemptive_auth{};
     Bearer m_bearer{};
     PubKey m_pub_key{};
     PrivKey m_priv_key{};

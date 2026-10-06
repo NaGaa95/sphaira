@@ -13,6 +13,7 @@
 #include "ui/progress_box.hpp"
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace sphaira::yati {
 
@@ -63,6 +64,9 @@ struct Config {
     // if mkey is higher than fw version, the game still won't launch
     // as the fw won't have the key to decrypt keak.
     bool lower_system_version{};
+
+    // if not empty, only content whose id is listed is installed.
+    std::vector<u64> title_ids{};
 };
 
 // overridable options, set to avoid
@@ -76,6 +80,10 @@ struct ConfigOverride {
     std::optional<bool> convert_to_standard_crypto{};
     std::optional<bool> lower_master_key{};
     std::optional<bool> lower_system_version{};
+
+    // installs only the content whose id is listed, skipping the rest of the
+    // container. on a random access source a skipped content costs one cnmt nca.
+    std::vector<u64> title_ids{};
 };
 
 Result InstallFromFile(ui::ProgressBox* pbox, fs::Fs* fs, const fs::FsPath& path, const ConfigOverride& override = {});

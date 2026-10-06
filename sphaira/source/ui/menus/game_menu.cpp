@@ -902,26 +902,12 @@ void Menu::ScanHomebrew() {
         m_accounts = App::GetAccountList();
     }
 
-    std::vector<NsApplicationRecord> record_list(ENTRY_CHUNK_COUNT);
-    s32 offset{};
-    while (true) {
-        s32 record_count{};
-        if (R_FAILED(nsListApplicationRecord(record_list.data(), record_list.size(), offset, &record_count))) {
-            log_write("failed to list application records at offset: %d\n", offset);
-        }
-
-        // finished parsing all entries.
-        if (!record_count) {
-            break;
-        }
-
+    title::ForEachApplicationRecord([&](std::span<const NsApplicationRecord> records) {
         std::vector<u64> batch_ids;
-        batch_ids.reserve(record_count);
+        batch_ids.reserve(records.size());
         const auto batch_start = m_entries.size();
 
-        for (s32 i = 0; i < record_count; i++) {
-            const auto& e = record_list[i];
-
+        for (const auto& e : records) {
             if (hide_forwarders && (e.application_id & 0x0500000000000000) == 0x0500000000000000) {
                 continue;
             }
@@ -979,9 +965,7 @@ void Menu::ScanHomebrew() {
                 }
             }
         }
-
-        offset += record_count;
-    }
+    });
 
     m_all_entries = m_entries;
     m_is_reversed = false;

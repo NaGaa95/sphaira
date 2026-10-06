@@ -35,9 +35,10 @@ constexpr auto MAX_THREADS = 4;
 
 std::atomic_bool g_running{};
 CURLSH* g_curl_share{};
-// this is used for single threaded blocking installs.
-// avoids the needed for re-creating the handle each time.
+// the handle for blocking requests, kept so one isn't created for each. any thread
+// can make one, so it is used only under its mutex (see RunBlocking).
 CURL* g_curl_single{};
+Mutex g_curl_single_mutex{};
 Mutex g_mutex_share[CURL_LOCK_DATA_LAST]{};
 
 struct UploadStruct {
@@ -121,8 +122,10 @@ struct Cache {
         log_write("[ETAG] exit\n");
     }
 
+    // the download threads and any thread making a blocking request can all be
+    // in here at once.
     void get(const fs::FsPath& path, curl::Header& header) {
-        ON_SCOPE_EXIT(mutexUnlock(&m_mutex));
+        SCOPED_MUTEX(&m_mutex);
 
         const auto [etag, last_modified] = get_internal(path);
         if (!etag.empty()) {
@@ -135,7 +138,7 @@ struct Cache {
     }
 
     void set(const fs::FsPath& path, const curl::Header& value) {
-        ON_SCOPE_EXIT(mutexUnlock(&m_mutex));
+        SCOPED_MUTEX(&m_mutex);
 
         std::string etag_str;
         std::string last_modified_str;
@@ -382,23 +385,14 @@ void GetDownloadTempPath(fs::FsPath& buf) {
     std::snprintf(buf, sizeof(buf), "/switch/sphaira/cache/download_temp%lu", count_copy);
 }
 
-auto ProgressCallbackFunc1(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) -> size_t {
-    if (!g_running) {
-        return 1;
-    }
-
-    Yield();
-    return 0;
-}
-
-auto ProgressCallbackFunc2(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) -> size_t {
+auto ProgressCallbackFunc(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) -> size_t {
     auto api = static_cast<Api*>(clientp);
     if (!g_running || api->GetToken().stop_requested()) {
         return 1;
     }
 
     // log_write("pcall called %u %u %u %u\n", dltotal, dlnow, ultotal, ulnow);
-    if (!api->GetOnProgress()(dltotal, dlnow, ultotal, ulnow)) {
+    if (api->GetOnProgress() && !api->GetOnProgress()(dltotal, dlnow, ultotal, ulnow)) {
         return 1;
     }
 
@@ -615,7 +609,7 @@ void SetCommonCurlOptions(CURL* curl, const Api& e) {
     CURL_EASY_SETOPT_LOG(curl, CURLOPT_FOLLOWLOCATION, 1L);
     CURL_EASY_SETOPT_LOG(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     CURL_EASY_SETOPT_LOG(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    CURL_EASY_SETOPT_LOG(curl, CURLOPT_FAILONERROR, 1L);
+    CURL_EASY_SETOPT_LOG(curl, CURLOPT_FAILONERROR, (e.GetFlags() & Flag_KeepErrorBody) ? 0L : 1L);
     CURL_EASY_SETOPT_LOG(curl, CURLOPT_NOPROGRESS, 0L);
     CURL_EASY_SETOPT_LOG(curl, CURLOPT_SHARE, g_curl_share);
     CURL_EASY_SETOPT_LOG(curl, CURLOPT_BUFFERSIZE, 1024*512);
@@ -663,6 +657,11 @@ void SetCommonCurlOptions(CURL* curl, const Api& e) {
 
     // set auth.
     if (!e.GetUserPass().m_user.empty()) {
+        // CURLAUTH_ANY has no scheme until the server challenges, so libcurl
+        // probes unauthenticated first; naming basic up front skips that.
+        if (e.GetPreemptiveAuth() && e.GetBearer().empty()) {
+            CURL_EASY_SETOPT_LOG(curl, CURLOPT_HTTPAUTH, (long)CURLAUTH_BASIC);
+        }
         CURL_EASY_SETOPT_LOG(curl, CURLOPT_USERPWD, e.GetUserPass().m_user.c_str());
     }
     if (!e.GetUserPass().m_pass.empty()) {
@@ -674,13 +673,10 @@ void SetCommonCurlOptions(CURL* curl, const Api& e) {
         CURL_EASY_SETOPT_LOG(curl, CURLOPT_PORT, (long)e.GetPort());
     }
 
-    // progress calls.
-    if (e.GetOnProgress()) {
-        CURL_EASY_SETOPT_LOG(curl, CURLOPT_XFERINFODATA, &e);
-        CURL_EASY_SETOPT_LOG(curl, CURLOPT_XFERINFOFUNCTION, ProgressCallbackFunc2);
-    } else {
-        CURL_EASY_SETOPT_LOG(curl, CURLOPT_XFERINFOFUNCTION, ProgressCallbackFunc1);
-    }
+    // progress calls, with or without a callback: they are also where a stop token
+    // cancels the request.
+    CURL_EASY_SETOPT_LOG(curl, CURLOPT_XFERINFODATA, &e);
+    CURL_EASY_SETOPT_LOG(curl, CURLOPT_XFERINFOFUNCTION, ProgressCallbackFunc);
 
 }
 auto DownloadInternal(CURL* curl, const Api& e) -> ApiResult {
@@ -1115,32 +1111,59 @@ void Exit() {
     curl_global_cleanup();
 }
 
+namespace {
+
+// runs on g_curl_single when it is free, and on a handle of its own rather than
+// waiting when it isn't: a long download would otherwise hold up every other
+// blocking request. the two behave alike, since what a handle reuses -
+// connections, dns, tls sessions - lives in g_curl_share.
+auto RunBlocking(const Api& e, bool upload) -> ApiResult {
+    const auto run = [&e, upload](CURL* curl) {
+        return upload ? UploadInternal(curl, e) : DownloadInternal(curl, e);
+    };
+
+    if (mutexTryLock(&g_curl_single_mutex)) {
+        ON_SCOPE_EXIT(mutexUnlock(&g_curl_single_mutex));
+        return run(g_curl_single);
+    }
+
+    log_write("[CURL] blocking handle busy, using one of its own\n");
+    const auto curl = curl_easy_init();
+    if (!curl) {
+        return {};
+    }
+    ON_SCOPE_EXIT(curl_easy_cleanup(curl));
+    return run(curl);
+}
+
+} // namespace
+
 auto ToMemory(const Api& e) -> ApiResult {
     if (!e.GetPath().empty()) {
         return {};
     }
-    return DownloadInternal(g_curl_single, e);
+    return RunBlocking(e, false);
 }
 
 auto ToFile(const Api& e) -> ApiResult {
     if (e.GetPath().empty()) {
         return {};
     }
-    return DownloadInternal(g_curl_single, e);
+    return RunBlocking(e, false);
 }
 
 auto FromMemory(const Api& e) -> ApiResult {
     if (!e.GetPath().empty()) {
         return {};
     }
-    return UploadInternal(g_curl_single, e);
+    return RunBlocking(e, true);
 }
 
 auto FromFile(const Api& e) -> ApiResult {
     if (e.GetPath().empty()) {
         return {};
     }
-    return UploadInternal(g_curl_single, e);
+    return RunBlocking(e, true);
 }
 
 auto ToMemoryAsync(const Api& api) -> bool {

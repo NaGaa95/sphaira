@@ -1,5 +1,6 @@
 nxbuild
 build*/
+build/*
 *.elf
 *.nro
 *.nacp
@@ -9,11 +10,9 @@ build*/
 src/ignoreme/
 old_code
 created_ncas
-assets/romfs/shaders
 .vscode/settings.json
 .idea
 info/
-romfs/shaders
 assets/unused
 
 libs/libpulsar

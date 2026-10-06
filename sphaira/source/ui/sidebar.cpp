@@ -261,9 +261,9 @@ SidebarEntryArray::SidebarEntryArray(const std::string& title, const Items& item
     }
 
     m_list_callback = [&index, this]() {
-        App::Push<PopupList>(
-            m_title, m_items, index, m_index
-        );
+        auto list = std::make_unique<PopupList>(m_title, m_items, index, m_index);
+        list->SetDisabled(m_disabled);
+        App::Push(std::move(list));
 
         SetDirty();
     };
@@ -285,14 +285,14 @@ SidebarEntryArray::SidebarEntryArray(const std::string& title, const Items& item
 , m_index{index} {
 
     m_list_callback = [this]() {
-        App::Push<PopupList>(
-            m_title, m_items, [this](auto op_idx){
-                if (op_idx) {
-                    m_index = *op_idx;
-                    m_callback(m_index);
-                }
-            }, m_index
-        );
+        auto list = std::make_unique<PopupList>(m_title, m_items, [this](auto op_idx){
+            if (op_idx) {
+                m_index = *op_idx;
+                m_callback(m_index);
+            }
+        }, m_index);
+        list->SetDisabled(m_disabled);
+        App::Push(std::move(list));
     };
 
     SetAction(Button::A, Action{"OK"_i18n, [this](){
@@ -506,6 +506,15 @@ auto Sidebar::Add(std::unique_ptr<SidebarEntryBase>&& _entry) -> SidebarEntryBas
     }
 
     return entry.get();
+}
+
+void Sidebar::SetDefaultEntry(const SidebarEntryBase* entry) {
+    for (s64 i = 0; i < static_cast<s64>(m_items.size()); i++) {
+        if (m_items[i].get() == entry) {
+            SetIndex(i);
+            break;
+        }
+    }
 }
 
 void Sidebar::SetIndex(s64 index) {

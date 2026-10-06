@@ -944,7 +944,7 @@ Result MountNetworkDevice(const CreateDeviceCallback& create_device, size_t file
     R_SUCCEED();
 }
 
-PushPullThreadData::PushPullThreadData(CURL* _curl) : curl{_curl} {
+PushPullThreadData::PushPullThreadData(CURL* _curl, std::stop_token token) : curl{_curl}, stop_token{token} {
     mutexInit(&mutex);
     condvarInit(&can_push);
     condvarInit(&can_pull);
@@ -1103,9 +1103,9 @@ size_t PushPullThreadData::progress_callback(void *clientp, curl_off_t dltotal, 
     {
         SCOPED_MUTEX(&data->mutex);
 
-        // abort early if there was an error.
-        if (data->error) {
-            log_write("[PUSH:PULL] progress_callback: aborting transfer, error set\n");
+        // abort before handling a paused transfer.
+        if (data->error || data->stop_token.stop_requested()) {
+            log_write("[PUSH:PULL] progress_callback: aborting transfer\n");
             return 1;
         }
 

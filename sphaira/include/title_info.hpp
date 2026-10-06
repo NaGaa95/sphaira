@@ -70,11 +70,19 @@ auto Get(u64 app_id, bool* cached = nullptr) -> ThreadResultData*;
 auto GetNcmCs(u8 storage_id) -> NcmContentStorage&;
 auto GetNcmDb(u8 storage_id) -> NcmContentMetaDatabase&;
 
+// walks every installed application record, a chunk at a time: ns pages the call,
+// and each caller has its own per-chunk work to do with the batch.
+Result ForEachApplicationRecord(const std::function<void(std::span<const NsApplicationRecord>)>& callback);
+
 // gets all meta entries for an id.
 Result GetMetaEntries(u64 id, MetaEntries& out, u32 flags = ContentFlag_All);
 
 // returns the nca path of a control nca.
 Result GetControlPathFromStatus(const NsApplicationContentMetaStatus& status, u64* out_program_id, fs::FsPath* out_path);
+
+// the same, against a database and storage the caller opened itself: for a
+// caller that doesn't hold title::Init.
+Result GetControlPath(NcmContentMetaDatabase* db, NcmContentStorage* cs, u64 id, u64* out_program_id, fs::FsPath* out_path);
 
 auto GetEnglishTitleName(u64 app_id) -> std::string;
 
