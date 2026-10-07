@@ -18,6 +18,7 @@ private:
     std::string m_message{};
     std::string m_code_message{};
     std::string m_code_module{};
+    std::string m_hint{};
 };
 
 } // namespace sphaira::ui

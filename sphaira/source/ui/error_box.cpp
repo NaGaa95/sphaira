@@ -191,6 +191,31 @@ auto GetCodeMessage(Result rc) -> const char* {
     return "";
 }
 
+// short, actionable advice for errors whose cause is known.
+// only add codes here where the cause is confirmed, a wrong hint is worse than none.
+auto GetCodeHint(Result rc) -> std::string {
+    switch (rc) {
+        case FsError_UsableSpaceNotEnoughSdCard:
+        case FsError_UsableSpaceNotEnoughMmcUser:
+        case FsError_UsableSpaceNotEnoughMmcSystem:
+            return "Not enough free space on the install location. Free up space or change the install location."_i18n;
+
+        case Result_KeyMissingNcaKeyArea:
+        case Result_KeyMissingTitleKek:
+        case Result_KeyMissingMasterKey:
+        case Result_KeyFailedDecyptETicketDeviceKey:
+            return "Your keys are missing or outdated. Dump prod.keys again with the latest Lockpick_RCM."_i18n;
+
+        case Result_YatiInvalidNczZstdError:
+            return "Failed to decompress the NCZ. Try installing from the SD card or use the USB install script."_i18n;
+
+        case Result_GcEmptyGamecard:
+            return "No game card was found. Make sure it is inserted correctly."_i18n;
+    }
+
+    return {};
+}
+
 } // namespace
 
 ErrorBox::ErrorBox(const std::string& message) : m_message{message} {
@@ -211,6 +236,7 @@ ErrorBox::ErrorBox(const std::string& message) : m_message{message} {
 ErrorBox::ErrorBox(Result code, const std::string& message) : ErrorBox{message} {
     m_code = code;
     m_code_message = GetCodeMessage(code);
+    m_hint = GetCodeHint(code);
     m_code_module = std::to_string(R_MODULE(code));
     if (auto str = GetModule(code)) {
         m_code_module += " (" + std::string(str) + ")";
@@ -240,9 +266,13 @@ auto ErrorBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     } else {
         gfx::drawTextArgs(vg, center_x, 270, 25, NVG_ALIGN_CENTER | NVG_ALIGN_TOP, theme->GetColour(ThemeEntryID_TEXT), "An error occurred"_i18n.c_str());
     }
-    gfx::drawTextArgs(vg, center_x, 325, 23, NVG_ALIGN_CENTER | NVG_ALIGN_TOP, theme->GetColour(ThemeEntryID_TEXT), "%s", m_message.c_str());
-    gfx::drawTextArgs(vg, center_x, 380, 20, NVG_ALIGN_CENTER | NVG_ALIGN_TOP, theme->GetColour(ThemeEntryID_TEXT_INFO), "If this message appears repeatedly, please open an issue."_i18n.c_str());
-    gfx::drawTextArgs(vg, center_x, 415, 20, NVG_ALIGN_CENTER | NVG_ALIGN_TOP, theme->GetColour(ThemeEntryID_TEXT_INFO), "https://github.com/ITotalJustice/sphaira/issues");
+    const bool has_hint = !m_hint.empty();
+    gfx::drawTextArgs(vg, center_x, has_hint ? 305 : 325, 23, NVG_ALIGN_CENTER | NVG_ALIGN_TOP, theme->GetColour(ThemeEntryID_TEXT), "%s", m_message.c_str());
+    if (has_hint) {
+        gfx::drawTextBox(vg, m_pos.x + 35, 340, 20, m_pos.w - 70, theme->GetColour(ThemeEntryID_TEXT_SELECTED), m_hint.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+    }
+    gfx::drawTextArgs(vg, center_x, has_hint ? 395 : 380, 20, NVG_ALIGN_CENTER | NVG_ALIGN_TOP, theme->GetColour(ThemeEntryID_TEXT_INFO), "If this message appears repeatedly, please open an issue."_i18n.c_str());
+    gfx::drawTextArgs(vg, center_x, has_hint ? 425 : 415, 20, NVG_ALIGN_CENTER | NVG_ALIGN_TOP, theme->GetColour(ThemeEntryID_TEXT_INFO), "https://github.com/ITotalJustice/sphaira/issues");
     gfx::drawRectOutline(vg, theme, 4.f, box);
     gfx::drawTextArgs(vg, center_x, box.y + box.h/2, 23, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_SELECTED), "OK"_i18n.c_str());
 }

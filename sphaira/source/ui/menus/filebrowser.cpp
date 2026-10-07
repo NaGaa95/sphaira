@@ -1245,7 +1245,7 @@ void FsView::OnDeleteCallback() {
 
             return DeleteAllCollectionsWithSelected(pbox, src_fs, selected, collections);
         }, [this](Result rc){
-            App::PushErrorBox(rc, "Failed to, TODO: add message here"_i18n);
+            App::PushErrorBox(rc, "Failed to delete one or more files"_i18n);
 
             m_menu->RefreshViews();
             log_write("did delete\n");
@@ -1383,7 +1383,7 @@ void FsView::OnPasteCallback() {
 
             R_SUCCEED();
         }, [this](Result rc){
-            App::PushErrorBox(rc, "Failed to, TODO: add message here"_i18n);
+            App::PushErrorBox(rc, "Failed to paste one or more files"_i18n);
 
             m_menu->RefreshViews();
             log_write("did paste\n");
