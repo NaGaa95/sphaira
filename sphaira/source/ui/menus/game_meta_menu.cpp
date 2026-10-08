@@ -132,6 +132,26 @@ Menu::Menu(Entry& entry) : MenuBase{entry.GetName(), MenuFlag_None}, m_entry{ent
                 }
             }
 
+            // archiving is per application, so it ignores the selection.
+            {
+                auto archive = options->Add<SidebarEntryCallback>("Archive"_i18n, [this](){
+                    const auto buf = i18n::Reorder("Are you sure you want to archive ", m_entry.GetName()) + "?";
+                    App::Push<OptionBox>(
+                        buf,
+                        "Back"_i18n, "Archive"_i18n, 0, [this](auto op_index){
+                            if (op_index && *op_index) {
+                                // copied before this menu is popped.
+                                std::vector<Entry> targets{m_entry};
+                                App::PopToMenu();
+                                ArchiveEntries(std::move(targets));
+                            }
+                        }, m_entry.image
+                    );
+                }, true, "Frees up the space used by the game, its updates and DLC. "
+                         "The game stays in the list with its save data, reinstall it to play again."_i18n);
+                DependsArchive(archive, m_entry);
+            }
+
             options->Add<SidebarEntryCallback>("Update version list"_i18n, [this](){
                 DownloadAndRefreshAvailable();
             });
