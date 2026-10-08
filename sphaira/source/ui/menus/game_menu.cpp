@@ -674,7 +674,9 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
 
                 if (!m_entries.empty()) {
                     options->Add<SidebarEntryCallback>("Create contents folder"_i18n, [this](){
-                        const auto rc = fs::FsNativeSd().CreateDirectory(title::GetContentsPath(m_entries[m_index].app_id));
+                        // recursive, as the parent folders may not exist yet.
+                        // an already existing folder is not an error.
+                        const auto rc = fs::FsNativeSd().CreateDirectoryRecursively(title::GetContentsPath(m_entries[m_index].app_id));
                         App::PushErrorBox(rc, "Folder create failed!"_i18n);
 
                         if (R_SUCCEEDED(rc)) {
