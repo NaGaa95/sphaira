@@ -1333,5 +1333,11 @@
   "Album share PIN": "PIN für Album-Freigabe",
   "Serves the album on this port.": "Stellt das Album auf diesem Port bereit.",
   "Browse": "Durchsuchen",
-  "Starts the server and shows the address and the QR code.": "Startet den Server und zeigt die Adresse und den QR-Code."
+  "Starts the server and shows the address and the QR code.": "Startet den Server und zeigt die Adresse und den QR-Code.",
+  "Not enough free space on the install location. Free up space or change the install location.": "Nicht genug freier Speicher am Installationsort. Speicher freigeben oder den Installationsort ändern.",
+  "Your keys are missing or outdated. Dump prod.keys again with the latest Lockpick_RCM.": "Die Keys fehlen oder sind veraltet. prod.keys erneut mit dem neuesten Lockpick_RCM dumpen.",
+  "Failed to decompress the NCZ. Try installing from the SD card or use the USB install script.": "NCZ konnte nicht entpackt werden. Von der SD-Karte installieren oder das USB-Installationsskript verwenden.",
+  "No game card was found. Make sure it is inserted correctly.": "Keine Spielkarte gefunden. Prüfen, ob sie richtig eingesteckt ist.",
+  "Failed to paste one or more files": "Eine oder mehrere Dateien konnten nicht eingefügt werden",
+  "Path: ": "Pfad: "
 }

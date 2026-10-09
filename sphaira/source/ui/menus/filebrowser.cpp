@@ -1226,7 +1226,9 @@ void FsView::OnDeleteCallback() {
         m_menu->RefreshViews();
         log_write("did delete\n");
     } else {
-        App::Push<ProgressBox>(0, "Deleting"_i18n, "", [this](auto pbox) -> Result {
+        // the thread and the callback both need to know which path failed.
+        const auto failed_path = std::make_shared<fs::FsPath>();
+        App::Push<ProgressBox>(0, "Deleting"_i18n, "", [this, failed_path](auto pbox) -> Result {
             FsDirCollections collections;
             auto& selected = m_menu->m_selected;
             auto src_fs = selected.m_view->GetFs();
@@ -1243,9 +1245,16 @@ void FsView::OnDeleteCallback() {
                 }
             }
 
-            return DeleteAllCollectionsWithSelected(pbox, src_fs, selected, collections);
-        }, [this](Result rc){
-            App::PushErrorBox(rc, "Failed to, TODO: add message here"_i18n);
+            return DeleteAllCollectionsWithSelected(pbox, src_fs, selected, collections, FsDirOpenMode_ReadDirs|FsDirOpenMode_ReadFiles, failed_path.get());
+        }, [this, failed_path](Result rc){
+            std::string detail;
+            if (std::strlen(*failed_path)) {
+                // keep the end of long paths, as that is the part that identifies the entry.
+                const std::string_view path{failed_path->s};
+                constexpr size_t MAX_LEN = 90;
+                detail = "Path: "_i18n + (path.size() > MAX_LEN ? "..." + std::string{path.substr(path.size() - MAX_LEN)} : std::string{path});
+            }
+            App::PushErrorBox(rc, "Failed to delete one or more files"_i18n, detail);
 
             m_menu->RefreshViews();
             log_write("did delete\n");
@@ -1383,7 +1392,7 @@ void FsView::OnPasteCallback() {
 
             R_SUCCEED();
         }, [this](Result rc){
-            App::PushErrorBox(rc, "Failed to, TODO: add message here"_i18n);
+            App::PushErrorBox(rc, "Failed to paste one or more files"_i18n);
 
             m_menu->RefreshViews();
             log_write("did paste\n");
@@ -1487,7 +1496,15 @@ auto FsView::get_collections(const fs::FsPath& path, const fs::FsPath& parent_na
     return get_collections(m_fs.get(), path, parent_name, out, inc_size);
 }
 
-Result FsView::DeleteAllCollections(ProgressBox* pbox, fs::Fs* fs, const FsDirCollections& collections, u32 mode) {
+// remembers which path failed, so that the error box can show it.
+static Result RememberFailedPath(Result rc, const fs::FsPath& path, fs::FsPath* failed_path) {
+    if (R_FAILED(rc) && failed_path) {
+        *failed_path = path;
+    }
+    return rc;
+}
+
+Result FsView::DeleteAllCollections(ProgressBox* pbox, fs::Fs* fs, const FsDirCollections& collections, u32 mode, fs::FsPath* failed_path) {
     // delete everything in collections, reversed
     for (const auto& c : std::views::reverse(collections)) {
         const auto delete_func = [&](auto& array) -> Result {
@@ -1500,11 +1517,11 @@ Result FsView::DeleteAllCollections(ProgressBox* pbox, fs::Fs* fs, const FsDirCo
                 pbox->NewTransfer(i18n::Reorder("Deleting ", full_path.toString()));
                 if ((mode & FsDirOpenMode_ReadDirs) && p.type == FsDirEntryType_Dir) {
                     log_write("deleting dir: %s\n", full_path.s);
-                    R_TRY(fs->DeleteDirectory(full_path));
+                    R_TRY(RememberFailedPath(fs->DeleteDirectory(full_path), full_path, failed_path));
                     svcSleepThread(1e+5);
                 } else if ((mode & FsDirOpenMode_ReadFiles) && p.type == FsDirEntryType_File) {
                     log_write("deleting file: %s\n", full_path.s);
-                    R_TRY(fs->DeleteFile(full_path));
+                    R_TRY(RememberFailedPath(fs->DeleteFile(full_path), full_path, failed_path));
                     svcSleepThread(1e+5);
                 }
             }
@@ -1519,8 +1536,8 @@ Result FsView::DeleteAllCollections(ProgressBox* pbox, fs::Fs* fs, const FsDirCo
     R_SUCCEED();
 }
 
-static Result DeleteAllCollectionsWithSelected(ProgressBox* pbox, fs::Fs* fs, const SelectedStash& selected, const FsDirCollections& collections, u32 mode = FsDirOpenMode_ReadDirs|FsDirOpenMode_ReadFiles) {
-    R_TRY(FsView::DeleteAllCollections(pbox, fs, collections, mode));
+static Result DeleteAllCollectionsWithSelected(ProgressBox* pbox, fs::Fs* fs, const SelectedStash& selected, const FsDirCollections& collections, u32 mode = FsDirOpenMode_ReadDirs|FsDirOpenMode_ReadFiles, fs::FsPath* failed_path = nullptr) {
+    R_TRY(FsView::DeleteAllCollections(pbox, fs, collections, mode, failed_path));
 
     for (const auto& p : selected.m_files) {
         pbox->Yield();
@@ -1532,10 +1549,10 @@ static Result DeleteAllCollectionsWithSelected(ProgressBox* pbox, fs::Fs* fs, co
 
         if ((mode & FsDirOpenMode_ReadDirs) && p.type == FsDirEntryType_Dir) {
             log_write("deleting dir: %s\n", full_path.s);
-            R_TRY(fs->DeleteDirectory(full_path));
+            R_TRY(RememberFailedPath(fs->DeleteDirectory(full_path), full_path, failed_path));
         } else if ((mode & FsDirOpenMode_ReadFiles) && p.type == FsDirEntryType_File) {
             log_write("deleting file: %s\n", full_path.s);
-            R_TRY(fs->DeleteFile(full_path));
+            R_TRY(RememberFailedPath(fs->DeleteFile(full_path), full_path, failed_path));
         }
     }
 

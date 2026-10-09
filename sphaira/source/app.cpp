@@ -714,6 +714,13 @@ Result App::PushErrorBox(Result rc, const std::string& message) {
     return rc;
 }
 
+Result App::PushErrorBox(Result rc, const std::string& message, const std::string& detail) {
+    if (R_FAILED(rc)) {
+        App::Push<ui::ErrorBox>(rc, message, detail);
+    }
+    return rc;
+}
+
 auto App::GetThemeMetaList() -> std::span<ThemeMeta> {
     return g_app->m_theme_meta_entries;
 }
@@ -960,7 +967,6 @@ void App::SetReplaceHbmenuEnable(bool enable) {
                     if (R_FAILED(rc = g_app->m_fs->copy_entire_file("/hbmenu.nro", "/switch/hbmenu.nro")))  {
                         // try and restore sphaira in a last ditch effort.
                         if (R_FAILED(rc = g_app->m_fs->copy_entire_file("/hbmenu.nro", sphaira_path))) {
-                            App::PushErrorBox(rc, "Failed to, TODO: add message here"_i18n);
                             App::PushErrorBox(rc,
                                 "Failed to restore hbmenu, please re-download hbmenu"_i18n
                             );

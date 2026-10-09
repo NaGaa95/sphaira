@@ -1335,5 +1335,11 @@
   "Album share PIN": "Album share PIN",
   "Serves the album on this port.": "Serves the album on this port.",
   "Browse": "Browse",
-  "Starts the server and shows the address and the QR code.": "Starts the server and shows the address and the QR code."
+  "Starts the server and shows the address and the QR code.": "Starts the server and shows the address and the QR code.",
+  "Not enough free space on the install location. Free up space or change the install location.": "Not enough free space on the install location. Free up space or change the install location.",
+  "Your keys are missing or outdated. Dump prod.keys again with the latest Lockpick_RCM.": "Your keys are missing or outdated. Dump prod.keys again with the latest Lockpick_RCM.",
+  "Failed to decompress the NCZ. Try installing from the SD card or use the USB install script.": "Failed to decompress the NCZ. Try installing from the SD card or use the USB install script.",
+  "No game card was found. Make sure it is inserted correctly.": "No game card was found. Make sure it is inserted correctly.",
+  "Failed to paste one or more files": "Failed to paste one or more files",
+  "Path: ": "Path: "
 }
