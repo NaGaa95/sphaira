@@ -132,7 +132,7 @@ auto apiBuildUrlDownloadInternal(const std::string& id, bool is_pack) -> std::st
         return {};
     }
     static constexpr std::string_view query =
-        "query($hexId:String!){switch{pack(hexId:$hexId){downloadUrl}}}";
+        "query($hexId:Hexadecimal!){switch{pack(hexId:$hexId){downloadUrl}}}";
     return BuildGraphqlUrl(query, "{\"hexId\":\"" + JsonEscape(id) + "\"}");
 }
 
