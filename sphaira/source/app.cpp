@@ -714,6 +714,13 @@ Result App::PushErrorBox(Result rc, const std::string& message) {
     return rc;
 }
 
+Result App::PushErrorBox(Result rc, const std::string& message, const std::string& detail) {
+    if (R_FAILED(rc)) {
+        App::Push<ui::ErrorBox>(rc, message, detail);
+    }
+    return rc;
+}
+
 auto App::GetThemeMetaList() -> std::span<ThemeMeta> {
     return g_app->m_theme_meta_entries;
 }

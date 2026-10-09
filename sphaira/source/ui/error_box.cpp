@@ -244,6 +244,12 @@ ErrorBox::ErrorBox(Result code, const std::string& message) : ErrorBox{message} 
     log_write("[ERROR] Code: 0x%X Module: %s Description: %u\n", R_VALUE(code), m_code_module.c_str(), R_DESCRIPTION(code));
 }
 
+ErrorBox::ErrorBox(Result code, const std::string& message, const std::string& detail) : ErrorBox{code, message} {
+    if (!detail.empty()) {
+        m_hint += (m_hint.empty() ? "" : "\n") + detail;
+    }
+}
+
 auto ErrorBox::Update(Controller* controller, TouchInfo* touch) -> void {
     Widget::Update(controller, touch);
 }

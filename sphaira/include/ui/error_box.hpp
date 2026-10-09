@@ -8,6 +8,7 @@ namespace sphaira::ui {
 class ErrorBox final : public Widget {
 public:
     ErrorBox(Result code, const std::string& message);
+    ErrorBox(Result code, const std::string& message, const std::string& detail);
     ErrorBox(const std::string& message);
 
     auto Update(Controller* controller, TouchInfo* touch) -> void override;

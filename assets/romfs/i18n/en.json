@@ -1340,5 +1340,6 @@
   "Your keys are missing or outdated. Dump prod.keys again with the latest Lockpick_RCM.": "Your keys are missing or outdated. Dump prod.keys again with the latest Lockpick_RCM.",
   "Failed to decompress the NCZ. Try installing from the SD card or use the USB install script.": "Failed to decompress the NCZ. Try installing from the SD card or use the USB install script.",
   "No game card was found. Make sure it is inserted correctly.": "No game card was found. Make sure it is inserted correctly.",
-  "Failed to paste one or more files": "Failed to paste one or more files"
+  "Failed to paste one or more files": "Failed to paste one or more files",
+  "Path: ": "Path: "
 }
