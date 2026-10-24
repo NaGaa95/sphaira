@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <span>
+#include <utility>
 
 #include "yati/nx/nca.hpp"
 #include "yati/nx/ncm.hpp"
@@ -23,6 +24,7 @@
 #include "nacp_compat.hpp"
 #include "ui/progress_box.hpp"
 #include "i18n.hpp"
+#include "image.hpp"
 #include "log.hpp"
 
 namespace sphaira {
@@ -106,6 +108,19 @@ void append_forwarder_tid_candidates(std::vector<u64>& tids, u64 hash) {
     tids.emplace_back(homebrew_forwarder_tid(hash));
     tids.emplace_back(legacy_retail_forwarder_tid(hash));
     tids.emplace_back(native_game_forwarder_tid(hash));
+}
+
+// Text drawn onto the HOME icon of forwarders using a non-default address
+// space, so side-by-side entries for the same NRO can be told apart. The
+// default 36-bit space keeps the original icon.
+auto address_space_icon_label(ForwarderAddressSpace address_space) -> std::string_view {
+    switch (address_space) {
+        case ForwarderAddressSpace::Bit32: return "32-BIT";
+        case ForwarderAddressSpace::Bit32NoAlias: return "32-BIT NA";
+        case ForwarderAddressSpace::Bit39: return "39-BIT";
+        case ForwarderAddressSpace::Bit36: return {};
+    }
+    return {};
 }
 
 // stdio-like wrapper for std::vector
@@ -988,8 +1003,16 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         config.args = config.nro_path + ' ' + config.args;
     }
 
-    // create tid by using a hash over path + args
-    const auto hash_path = config.nro_path + config.args;
+    // create tid by using a hash over path + args. A non-default address
+    // space is part of the hash, so forwarders for the same NRO that differ
+    // only in address space (eg. a 32-bit and a 39-bit launcher entry) get
+    // different title ids and coexist instead of overwriting each other.
+    // The default 36-bit space keeps the historical unsalted hash, so the
+    // title ids of forwarders installed by earlier builds do not change.
+    auto hash_path = config.nro_path + config.args;
+    if (config.address_space != ForwarderAddressSpace::Bit36) {
+        hash_path += "\naddress-space=" + std::to_string(static_cast<unsigned>(config.address_space)) + "\nsphaira-forwarder=1";
+    }
     const auto hash = forwarder_path_hash(hash_path);
 
     // A native-game forwarder gets a retail-range title id and AllowDebug
@@ -1005,9 +1028,11 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
     const u64 tid = native_game ? native_game_forwarder_tid(hash) : homebrew_forwarder_tid(hash);
 
     // Reinstalling under a different mode changes the title id. Remove the
-    // other representations Sphaira may have used for this same path+args,
-    // otherwise duplicate HOME icons can remain and an old copy without the
-    // requested title-id/debug settings may be launched. Also cover older
+    // other representations Sphaira may have used for this same
+    // path+args+address space, otherwise duplicate HOME icons can remain
+    // and an old copy without the requested title-id/debug settings may be
+    // launched. Forwarders hashed with a different address space are
+    // separate entries and are deliberately kept. Also cover older
     // installs whose hash input did not include the sdmc: prefix.
     std::vector<u64> legacy_tids;
     append_forwarder_tid_candidates(legacy_tids, hash);
@@ -1016,9 +1041,9 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         append_forwarder_tid_candidates(legacy_tids, forwarder_path_hash(hash_path_without_sdmc));
     }
 
-    log_write("[owo] forwarder path:%s args:%s native_game_mode:%u detected_nethersx2:%u native_game:%u tid:%016lX\n",
-        config.nro_path.c_str(), config.args.c_str(), static_cast<unsigned>(config.native_game_mode),
-        detected_nethersx2, native_game, tid);
+    log_write("[owo] forwarder path:%s args:%s address_space:%u native_game_mode:%u detected_nethersx2:%u native_game:%u tid:%016lX\n",
+        config.nro_path.c_str(), config.args.c_str(), static_cast<unsigned>(config.address_space),
+        static_cast<unsigned>(config.native_game_mode), detected_nethersx2, native_game, tid);
 
     std::vector<NcaEntry> nca_entries;
 
@@ -1071,9 +1096,20 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         nacp_patch.video_capture = config.video_capture;
         patch_nacp(config.nacp, nacp_patch);
 
+        // Mark non-default address spaces on the icon itself, so multiple
+        // forwarders for the same NRO can be told apart on the HOME menu.
+        auto icon = config.icon;
+        if (const auto label = address_space_icon_label(config.address_space); !label.empty()) {
+            if (auto labelled = ImageIconWithLabel(icon, label); !labelled.empty()) {
+                icon = std::move(labelled);
+            } else {
+                log_write("[owo] failed to draw address space label onto icon\n");
+            }
+        }
+
         FileEntries romfs;
         add_file_entry(romfs, "/control.nacp", &config.nacp, sizeof(config.nacp));
-        add_file_entry(romfs, "/icon_AmericanEnglish.dat", config.icon);
+        add_file_entry(romfs, "/icon_AmericanEnglish.dat", icon);
 
         nca_entries.emplace_back(
             create_control_nca(tid, keys, romfs)

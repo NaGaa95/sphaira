@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <span>
+#include <string_view>
 #include <switch.h>
 #include "fs.hpp"
 
@@ -27,5 +28,10 @@ auto ImageConvertToJpg(std::span<const u8> data, int x, int y) -> ImageResult;
 // for compatibility, then downscaled before being kept in memory or uploaded.
 auto ImageLoadIcon(std::span<const u8> data) -> ImageResult;
 auto ImageNormalizeIcon(std::span<const u8> data) -> std::vector<u8>;
+
+// Returns the icon as a 256x256 JPEG with the label drawn on a dark band
+// along the bottom edge, or empty on failure. Supports the characters
+// used for address space labels: digits, '-', 'A', 'B', 'I', 'N', 'T', ' '.
+auto ImageIconWithLabel(std::span<const u8> data, std::string_view label) -> std::vector<u8>;
 
 } // namespace sphaira
