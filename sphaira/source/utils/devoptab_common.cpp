@@ -1260,7 +1260,9 @@ bool MountCurlDevice::Mount() {
         // try and parse the path from the url, if any.
         // eg, https://example.com/some/path/here
         char* path{};
-        rc = curl_url_get(curlu, CURLUPART_PATH, &path, 0);
+        // decode the path, as build_url() encodes it again. otherwise, paths
+        // that contain escaped characters (eg, spaces) are encoded twice.
+        rc = curl_url_get(curlu, CURLUPART_PATH, &path, CURLU_URLDECODE);
         if (rc == CURLUE_OK && path) {
             log_write("[CURL] base path: %s\n", path);
             m_url_path = path;
@@ -1499,8 +1501,7 @@ std::string MountCurlDevice::url_decode(const std::string& str) {
     return html_decode(unescaped);
 }
 
-std::string MountCurlDevice::build_url(const std::string& _path, bool is_dir) {
-    log_write("[CURL] building url for path: %s\n", _path.c_str());
+std::string MountCurlDevice::build_path(const std::string& _path, bool is_dir) const {
     auto path = _path;
     if (is_dir && !path.ends_with('/')) {
         path += '/'; // append trailing slash for folder.
@@ -1513,6 +1514,13 @@ std::string MountCurlDevice::build_url(const std::string& _path, bool is_dir) {
             path = m_url_path + '/' + path;
         }
     }
+
+    return path;
+}
+
+std::string MountCurlDevice::build_url(const std::string& _path, bool is_dir) {
+    log_write("[CURL] building url for path: %s\n", _path.c_str());
+    const auto path = build_path(_path, is_dir);
 
     if (!path.empty()) {
         const auto rc = curl_url_set(curlu, CURLUPART_PATH, path.c_str(), CURLU_URLENCODE);
