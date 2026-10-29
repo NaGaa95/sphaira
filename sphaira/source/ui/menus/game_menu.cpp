@@ -7,6 +7,7 @@
 #include "image.hpp"
 #include "nx_versions.hpp"
 #include "swkbd.hpp"
+#include "game_lang.hpp"
 
 #include "utils/utils.hpp"
 #include "utils/thread.hpp"
@@ -185,7 +186,7 @@ void LoadResultIntoEntry(Entry& e, title::ThreadResultData* result) {
     if (result) {
         e.status = result->status;
         e.lang = result->lang;
-        e.status = result->status;
+        e.supported_language_flag = result->supported_language_flag;
     }
 }
 
@@ -695,6 +696,36 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
                     const auto random_index = randomGet64() % std::size(m_entries);
                     ConfirmLaunch(m_entries[random_index]);
                 });
+
+                // language override is useless for forwarders.
+                if ((m_entries[m_index].app_id & 0x0500000000000000) != 0x0500000000000000) {
+                    // fetch supported languages if not already known.
+                    auto& lang_entry = m_entries[m_index];
+                    if (!lang_entry.supported_language_flag && lang_entry.status == title::NacpLoadStatus::Loaded) {
+                        title::GetSupportedLanguageFlag(lang_entry.app_id, &lang_entry.supported_language_flag);
+                    }
+
+                    SidebarEntryArray::Items lang_items;
+                    lang_items.push_back("System default"_i18n);
+                    for (size_t i = 0; i < game_lang::LANGUAGE_COUNT; i++) {
+                        const auto& language = game_lang::LANGUAGES[i];
+                        auto name = std::string{language.name};
+                        if (lang_entry.supported_language_flag && !(lang_entry.supported_language_flag & language.supported_language_flag)) {
+                            name += i18n::get(" (not supported)");
+                        }
+                        lang_items.push_back(name);
+                    }
+
+                    options->Add<SidebarEntryArray>("Launch language"_i18n, lang_items, [this](s64& index_out){
+                        const auto rc = game_lang::Set(m_entries[m_index].app_id, index_out);
+                        if (R_FAILED(rc)) {
+                            App::PushErrorBox(rc, "Failed to set language!"_i18n);
+                        } else {
+                            App::Notify("Language set! Takes effect on next launch."_i18n);
+                        }
+                    }, game_lang::Get(lang_entry.app_id),
+                        "Forces this game to launch in the selected language.\nRequires Atmosphere."_i18n);
+                }
 
                 auto export_nsp = options->Add<SidebarEntryCallback>("Export NSP"_i18n, [this](){
                     ExportOptions(false);
