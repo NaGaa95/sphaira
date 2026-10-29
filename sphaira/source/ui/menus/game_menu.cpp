@@ -1721,9 +1721,26 @@ void Menu::ExportOptions(bool to_nsz) {
 void Menu::DumpGames(u32 flags, bool to_nsz) {
     auto targets = GetSelectedEntries();
 
+    // errors must not be ignored, otherwise nothing is exported and it looks like it succeeded.
+    // a game with nothing of the requested type (such as no dlc) is not an error by itself,
+    // as long as something else was found to export.
+    Result first_failure{};
     std::vector<NspEntry> nsp_entries;
     for (auto& e : targets) {
-        BuildNspEntries(e, flags, nsp_entries, to_nsz);
+        const auto rc = BuildNspEntries(e, flags, nsp_entries, to_nsz);
+        if (R_FAILED(rc) && rc != Result_GameNoNspEntriesBuilt && R_SUCCEEDED(first_failure)) {
+            first_failure = rc;
+        }
+    }
+
+    if (R_FAILED(first_failure)) {
+        App::PushErrorBox(first_failure, "Export failed!"_i18n);
+    } else if (nsp_entries.empty()) {
+        App::PushErrorBox(Result_GameNoNspEntriesBuilt, "Export failed!"_i18n);
+    }
+
+    if (nsp_entries.empty()) {
+        return;
     }
 
     DumpNsp(nsp_entries, to_nsz);

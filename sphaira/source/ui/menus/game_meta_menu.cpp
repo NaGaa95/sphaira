@@ -444,7 +444,15 @@ void Menu::DumpGames(bool to_nsz) {
     App::PopToMenu();
 
     std::vector<NspEntry> nsps;
-    BuildNspEntries(m_entry, entries, nsps, to_nsz);
+    // don't ignore errors, otherwise nothing is exported and it looks like it succeeded.
+    const auto rc = BuildNspEntries(m_entry, entries, nsps, to_nsz);
+    if (R_FAILED(rc)) {
+        App::PushErrorBox(rc, "Export failed!"_i18n);
+    }
+
+    if (nsps.empty()) {
+        return;
+    }
 
     DumpNsp(nsps, to_nsz);
 }
