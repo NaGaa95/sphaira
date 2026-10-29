@@ -451,7 +451,7 @@ endif()
 if (ENABLE_LIBHAZE)
     FetchContent_Declare(libhaze
         GIT_REPOSITORY https://github.com/R-YaTian/libhaze.git
-        GIT_TAG f1c9c63
+        GIT_TAG 9f5467c
     )
 
     FetchContent_MakeAvailable(libhaze)
