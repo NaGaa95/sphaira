@@ -708,8 +708,9 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
                     SidebarEntryArray::Items lang_items;
                     lang_items.push_back("System default"_i18n);
                     for (size_t i = 0; i < game_lang::LANGUAGE_COUNT; i++) {
-                        auto name = std::string{game_lang::LANGUAGES[i].name};
-                        if (lang_entry.supported_language_flag && !(lang_entry.supported_language_flag & (1u << i))) {
+                        const auto& language = game_lang::LANGUAGES[i];
+                        auto name = std::string{language.name};
+                        if (lang_entry.supported_language_flag && !(lang_entry.supported_language_flag & language.supported_language_flag)) {
                             name += i18n::get(" (not supported)");
                         }
                         lang_items.push_back(name);

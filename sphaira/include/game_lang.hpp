@@ -6,33 +6,32 @@
 
 namespace sphaira::game_lang {
 
-// language entry, ordered by SetLanguage / NacpStruct.supported_language_flag
-// bit index. code is the value passed to atmospheres per-title config.ini:
-// /atmosphere/contents/<tid>/config.ini -> [override_config] override_language.
+// NACP language bits differ from SetLanguage order.
 struct Language {
     const char* code; // "ja", "en-US", ...
     const char* name; // display name, i18n key.
+    u32 supported_language_flag;
 };
 
 constexpr inline Language LANGUAGES[]{
-    {"ja",     "Japanese"},
-    {"en-US",  "English"},
-    {"fr",     "French"},
-    {"de",     "German"},
-    {"it",     "Italian"},
-    {"es",     "Spanish"},
-    {"zh-CN",  "Chinese (Simplified)"},
-    {"ko",     "Korean"},
-    {"nl",     "Dutch"},
-    {"pt",     "Portuguese"},
-    {"ru",     "Russian"},
-    {"zh-TW",  "Chinese (Traditional)"},
-    {"en-GB",  "British English"},
-    {"fr-CA",  "Canadian French"},
-    {"es-419", "Latin American Spanish"},
-    {"zh-Hans", "Simplified Chinese"},
-    {"zh-Hant", "Traditional Chinese"},
-    {"pt-BR",  "Portuguese (Brazil)"},
+    {"ja",     "Japanese", BIT(2)},
+    {"en-US",  "English", BIT(0)},
+    {"fr",     "French", BIT(3)},
+    {"de",     "German", BIT(4)},
+    {"it",     "Italian", BIT(7)},
+    {"es",     "Spanish", BIT(6)},
+    {"zh-CN",  "Chinese (Simplified)", BIT(14)},
+    {"ko",     "Korean", BIT(12)},
+    {"nl",     "Dutch", BIT(8)},
+    {"pt",     "Portuguese", BIT(10)},
+    {"ru",     "Russian", BIT(11)},
+    {"zh-TW",  "Chinese (Traditional)", BIT(13)},
+    {"en-GB",  "British English", BIT(1)},
+    {"fr-CA",  "Canadian French", BIT(9)},
+    {"es-419", "Latin American Spanish", BIT(5)},
+    {"zh-Hans", "Simplified Chinese", BIT(14)},
+    {"zh-Hant", "Traditional Chinese", BIT(13)},
+    {"pt-BR",  "Portuguese (Brazil)", BIT(15)},
 };
 
 // index 0 is reserved for "system default" (no override).
