@@ -19,7 +19,7 @@ static WordOrder g_word_order = WordOrder::PhraseName;
 
 static WordOrder DetectWordOrder(const std::string& lang) {
     // SOV Language.
-    if (lang == "ja" || lang == "ko")
+    if (lang == "ja" || lang == "ko" || lang == "tr")
         return WordOrder::NamePhrase;
     
     // Default: SVO Language.
@@ -130,6 +130,7 @@ std::string init(long index) {
         case 13: lang_name = "se"; break; // "Swedish"
         case 14: lang_name = "vi"; break; // "Vietnamese"
         case 15: lang_name = "uk"; break; // "Ukrainian"
+        case 16: lang_name = "tr"; break; // "Turkish"
     }
 
     switch (setLanguage) {

@@ -7,7 +7,7 @@ namespace sphaira::i18n {
 
 enum class WordOrder {
     PhraseName,  // default: SVO (English, French, German, etc.)
-    NamePhrase   // SOV (Japanese, Korean)
+    NamePhrase   // SOV (Japanese, Korean, Turkish)
 };
 
 std::string init(long index);
