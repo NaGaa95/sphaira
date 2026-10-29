@@ -788,6 +788,7 @@
   "Archive": "封存",
   "Archiving": "正在封存",
   "Are you sure you want to archive ": "確定要封存 ",
+  "Are you sure you want to archive the selected entries?": "確定要封存所選項目嗎？",
   "Archive failed!": "封存失敗！",
   "Archive successful!": "封存成功！",
   "This game is archived, it must be reinstalled before it can be played.": "此遊戲已封存，必須重新安裝後才能遊玩。",

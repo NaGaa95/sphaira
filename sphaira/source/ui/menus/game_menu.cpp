@@ -726,14 +726,18 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
                 // removes the content but keeps the record, icon and saves,
                 // same as the system's "Archive Software".
                 auto archive = options->Add<SidebarEntryCallback>("Archive"_i18n, [this](){
-                    const auto buf = i18n::Reorder("Are you sure you want to archive ", m_entries[m_index].GetName()) + "?";
+                    const auto targets = GetSelectedEntries();
+                    const auto single = targets.size() == 1;
+                    const auto buf = single
+                        ? i18n::Reorder("Are you sure you want to archive ", targets.front().GetName()) + "?"
+                        : "Are you sure you want to archive the selected entries?"_i18n;
                     App::Push<OptionBox>(
                         buf,
                         "Back"_i18n, "Archive"_i18n, 0, [this](auto op_index){
                             if (op_index && *op_index) {
                                 ArchiveGames();
                             }
-                        }, m_entries[m_index].image
+                        }, single ? targets.front().image : 0
                     );
                 }, true, "Frees up the space used by the game, its updates and DLC. "
                          "The game stays in the list with its save data, reinstall it to play again."_i18n);
@@ -1661,6 +1665,7 @@ void ArchiveEntries(std::vector<Entry> targets) {
         const auto gc_app_ids = GetGameCardAppIds();
 
         for (s64 i = 0; i < std::size(targets); i++) {
+            R_TRY(pbox->ShouldExitResult());
             auto& e = targets[i];
 
             // the selection may not have been drawn yet. nothing installed
@@ -1673,12 +1678,15 @@ void ArchiveEntries(std::vector<Entry> targets) {
             LoadControlEntry(e);
             pbox->SetTitle(e.GetName());
             pbox->UpdateTransfer(i + 1, std::size(targets));
+            R_TRY(pbox->ShouldExitResult());
             R_TRY(nsDeleteApplicationEntity(e.app_id));
         }
 
         R_SUCCEED();
     }, [](Result rc){
-        App::PushErrorBox(rc, "Archive failed!"_i18n);
+        if (rc != Result_TransferCancelled) {
+            App::PushErrorBox(rc, "Archive failed!"_i18n);
+        }
 
         // rescans the games menu.
         SignalChange();

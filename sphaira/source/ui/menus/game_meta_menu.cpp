@@ -140,8 +140,8 @@ Menu::Menu(Entry& entry) : MenuBase{entry.GetName(), MenuFlag_None}, m_entry{ent
                         buf,
                         "Back"_i18n, "Archive"_i18n, 0, [this](auto op_index){
                             if (op_index && *op_index) {
-                                // copied before this menu is popped.
                                 std::vector<Entry> targets{m_entry};
+                                SetPop();
                                 App::PopToMenu();
                                 ArchiveEntries(std::move(targets));
                             }

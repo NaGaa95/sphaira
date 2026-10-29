@@ -787,6 +787,7 @@
   "Archive": "アーカイブ",
   "Archiving": "アーカイブ中",
   "Are you sure you want to archive ": "をアーカイブしてもよろしいですか",
+  "Are you sure you want to archive the selected entries?": "選択した項目をアーカイブしますか？",
   "Archive failed!": "アーカイブに失敗しました!",
   "Archive successful!": "アーカイブ完了しました!",
   "This game is archived, it must be reinstalled before it can be played.": "このゲームはアーカイブされています。プレイするには再インストールが必要です。",
