@@ -19,7 +19,7 @@ struct Menu : MenuBase {
 
 protected:
     void OnLayoutChange(std::unique_ptr<List>& list, int layout);
-    void DrawEntry(NVGcontext* vg, Theme* theme, int layout, const Vec4& v, bool selected, int image, const char* name, const char* author, const char* version);
+    Vec4 DrawEntry(NVGcontext* vg, Theme* theme, int layout, const Vec4& v, bool selected, int image, const char* name, const char* author, const char* version);
     // same as above but doesn't draw image and returns image dimension.
     Vec4 DrawEntryNoImage(NVGcontext* vg, Theme* theme, int layout, const Vec4& v, bool selected, const char* name, const char* author, const char* version);
 
