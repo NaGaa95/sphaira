@@ -16,6 +16,10 @@
 #include <vector>
 #include <span>
 
+namespace sphaira::ui {
+class SidebarEntryBase;
+} // namespace sphaira::ui
+
 namespace sphaira::ui::menu::game {
 
 struct PlaytimeWorker;
@@ -32,6 +36,15 @@ struct Entry {
     bool playtime_cached{};
     std::vector<u64> user_playtimes{};
     title::NacpLoadStatus status{title::NacpLoadStatus::None};
+    // installed and gc_title are loaded once the entry is first drawn, as
+    // they cost a few ipc calls per entry.
+    bool content_loaded{};
+    // ns counts nothing on a game card as installed.
+    bool installed{true};
+    // the record points at a game card, inserted or not.
+    bool gc_title{};
+    // the inserted game card holds this title.
+    bool gc_inserted{};
 
     auto GetName() const -> const char* {
         return lang.name;
@@ -39,6 +52,17 @@ struct Entry {
 
     auto GetAuthor() const -> const char* {
         return lang.author;
+    }
+
+    // the record is kept but no content is installed, like the system's own
+    // "Archive Software". a game card title with nothing installed is not
+    // archived, it plays from its card.
+    auto IsArchived() const -> bool {
+        return !installed && !IsGameCard();
+    }
+
+    auto IsGameCard() const -> bool {
+        return gc_title || gc_inserted;
     }
 };
 
@@ -87,6 +111,7 @@ private:
     void StartMissingContentScan();
     void DownloadAndScanMissingContent();
     void InvalidateMissingContentCache();
+    void RefreshGameCard();
 
     auto IsPlayStatsEnabled() -> bool {
         return m_play_stats.Get();
@@ -116,6 +141,7 @@ private:
     }
 
     void DeleteGames();
+    void ArchiveGames();
     void ExportOptions(bool to_nsz);
     void DumpGames(u32 flags, bool to_nsz);
     void CreateSaves(AccountUid uid);
@@ -143,6 +169,11 @@ private:
     // use for detection game card removal to force a refresh.
     Event m_gc_event{};
     FsEventNotifier m_gc_event_notifier{};
+    // the card is mounted, or dropped, a moment after the event fires, so it
+    // is polled for a while afterwards.
+    std::vector<u64> m_gc_app_ids{};
+    u64 m_gc_poll_end{};
+    u64 m_gc_poll_next{};
 
     option::OptionLong m_sort{INI_SECTION, "sort", SortType::SortType_Updated};
     option::OptionLong m_order{INI_SECTION, "order", OrderType::OrderType_Descending};
@@ -165,6 +196,11 @@ Result GetMetaEntries(const Entry& e, title::MetaEntries& out, u32 flags = title
 
 Result GetNcmMetaFromMetaStatus(const NsApplicationContentMetaStatus& status, NcmMetaData& out);
 void DeleteMetaEntries(u64 app_id, int image, const std::string& name, const title::MetaEntries& entries);
+// removes the content of each application but keeps its record, icon and
+// saves, same as the system's "Archive Software".
+void ArchiveEntries(std::vector<Entry> targets);
+// greys out the archive option when the entry has nothing installed.
+void DependsArchive(SidebarEntryBase* archive, const Entry& e);
 
 struct TikEntry {
     FsRightsId id{};

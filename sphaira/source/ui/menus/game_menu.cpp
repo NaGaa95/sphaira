@@ -204,7 +204,81 @@ void FreeEntry(NVGcontext* vg, Entry& e) {
     e.image = 0;
 }
 
+// the applications on the inserted game card, empty if there is none. the
+// database is opened each time, as the card may have been swapped since.
+auto GetGameCardAppIds() -> std::vector<u64> {
+    FsDeviceOperator dev_op;
+    if (R_FAILED(fsOpenDeviceOperator(&dev_op))) {
+        return {};
+    }
+    ON_SCOPE_EXIT(fsDeviceOperatorClose(&dev_op));
+
+    // the database can still be opened for a moment after the card is out.
+    bool inserted{};
+    if (R_FAILED(fsDeviceOperatorIsGameCardInserted(&dev_op, &inserted)) || !inserted) {
+        return {};
+    }
+
+    NcmContentMetaDatabase db;
+    if (R_FAILED(ncmOpenContentMetaDatabase(&db, NcmStorageId_GameCard))) {
+        return {};
+    }
+    ON_SCOPE_EXIT(ncmContentMetaDatabaseClose(&db));
+
+    NcmApplicationContentMetaKey keys[16];
+    s32 total{}, written{};
+    if (R_FAILED(ncmContentMetaDatabaseListApplication(&db, &total, &written, keys, std::size(keys), NcmContentMetaType_Unknown))) {
+        return {};
+    }
+
+    std::vector<u64> out;
+    for (s32 i = 0; i < written; i++) {
+        out.emplace_back(keys[i].application_id);
+    }
+
+    return out;
+}
+
+void LoadGameCardState(Entry& e, std::span<const u64> gc_app_ids) {
+    e.gc_inserted = std::ranges::find(gc_app_ids, e.app_id) != gc_app_ids.end();
+}
+
+void LoadContentState(Entry& e, std::span<const u64> gc_app_ids) {
+    if (R_FAILED(nsIsAnyApplicationEntityInstalled(e.app_id, &e.installed))) {
+        e.installed = true;
+    }
+
+    std::vector<ncm::ContentStorageRecord> records;
+    ns::GetApplicationRecords(e.app_id, records);
+    e.gc_title = std::ranges::any_of(records, [](const auto& record) {
+        return record.storage_id == NcmStorageId_GameCard;
+    });
+
+    LoadGameCardState(e, gc_app_ids);
+    e.content_loaded = true;
+}
+
 void LaunchEntry(const Entry& e) {
+    // asked again rather than trusting the scan, the game may have been
+    // reinstalled or its card inserted since.
+    auto state = e;
+    LoadContentState(state, GetGameCardAppIds());
+
+    const char* reason{};
+    if (state.IsArchived()) {
+        reason = "This game is archived, it must be reinstalled before it can be played.";
+    } else if (state.IsGameCard() && !state.gc_inserted) {
+        reason = "Insert the game card to play this game.";
+    }
+
+    if (reason) {
+        App::Push<OptionBox>(
+            std::string(e.GetName()) + "\n\n" + i18n::get(reason),
+            "OK"_i18n, [](auto){}, e.image
+        );
+        return;
+    }
+
     const auto rc = appletRequestLaunchApplication(e.app_id, nullptr);
     Notify(rc, "Failed to launch application"_i18n);
 }
@@ -657,6 +731,26 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
                         }, m_entries[m_index].image
                     );
                 }, true);
+
+                // removes the content but keeps the record, icon and saves,
+                // same as the system's "Archive Software".
+                auto archive = options->Add<SidebarEntryCallback>("Archive"_i18n, [this](){
+                    const auto buf = i18n::Reorder("Are you sure you want to archive ", m_entries[m_index].GetName()) + "?";
+                    App::Push<OptionBox>(
+                        buf,
+                        "Back"_i18n, "Archive"_i18n, 0, [this](auto op_index){
+                            if (op_index && *op_index) {
+                                ArchiveGames();
+                            }
+                        }, m_entries[m_index].image
+                    );
+                }, true, "Frees up the space used by the game, its updates and DLC. "
+                         "The game stays in the list with its save data, reinstall it to play again."_i18n);
+
+                // with a selection, the titles with nothing installed are skipped.
+                if (!m_selected_count) {
+                    DependsArchive(archive, m_entries[m_index]);
+                }
             }
 
             options->Add<SidebarEntryCallback>("Advanced options"_i18n, [this](){
@@ -762,6 +856,17 @@ void Menu::Update(Controller* controller, TouchInfo* touch) {
         SortAndFindLastFile(true);
     }
 
+    if (m_gc_poll_end) {
+        const auto now = armGetSystemTick();
+        if (now >= m_gc_poll_next) {
+            m_gc_poll_next = now + armNsToTicks(500'000'000ULL);
+            RefreshGameCard();
+        }
+        if (now >= m_gc_poll_end) {
+            m_gc_poll_end = 0;
+        }
+    }
+
     MenuBase::Update(controller, touch);
     m_list->OnUpdate(controller, touch, m_index, m_entries.size(), [this](bool touch, auto i) {
         if (touch && m_index == i) {
@@ -784,8 +889,10 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
     // max images per frame, in order to not hit io / gpu too hard.
     const int image_load_max = 2;
     int image_load_count = 0;
+    const int content_load_max = 4;
+    int content_load_count = 0;
 
-    m_list->Draw(vg, theme, m_entries.size(), [this, &image_load_count](auto* vg, auto* theme, auto v, auto pos) {
+    m_list->Draw(vg, theme, m_entries.size(), [this, &image_load_count, &content_load_count](auto* vg, auto* theme, auto v, auto pos) {
         const auto& [x, y, w, h] = v;
         auto& e = m_entries[pos];
 
@@ -803,13 +910,38 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
             }
         }
 
+        // lazy load the archived / game card state.
+        if (!e.content_loaded && content_load_count < content_load_max) {
+            LoadContentState(e, m_gc_app_ids);
+            content_load_count++;
+        }
+
         SyncEntryToMaster(e);
 
         char title_id[33];
         std::snprintf(title_id, sizeof(title_id), "%016lX", e.app_id);
 
         const auto selected = pos == m_index;
-        DrawEntry(vg, theme, m_layout.Get(), v, selected, e.image, e.GetName(), e.GetAuthor(), title_id);
+        const auto image_v = DrawEntry(vg, theme, m_layout.Get(), v, selected, e.image, e.GetName(), e.GetAuthor(), title_id);
+
+        // same corner as the home menu's own cloud badge. a game card
+        // title's badge is greyed whilst its card is out.
+        if (e.content_loaded && (e.IsArchived() || e.IsGameCard())) {
+            const auto r = image_v.w * 0.13f;
+            const auto cx = image_v.x + image_v.w - r - 6;
+            const auto cy = image_v.y + image_v.h - r - 6;
+            nvgBeginPath(vg);
+            nvgCircle(vg, cx, cy, r);
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 170));
+            nvgFill(vg);
+
+            if (e.IsArchived()) {
+                gfx::drawCloud(vg, cx, cy, r * 1.25f, nvgRGB(255, 255, 255));
+            } else {
+                const auto c = e.gc_inserted ? nvgRGB(255, 255, 255) : nvgRGBA(255, 255, 255, 80);
+                gfx::drawGameCard(vg, cx, cy, r * 1.2f, c);
+            }
+        }
 
         if (e.selected) {
             gfx::drawRect(vg, v, theme->GetColour(ThemeEntryID_FOCUS), 5);
@@ -910,6 +1042,11 @@ void Menu::ScanHomebrew() {
     if (play_stats && m_accounts.empty()) {
         m_accounts = App::GetAccountList();
     }
+
+    m_gc_app_ids = GetGameCardAppIds();
+    // a card that was just inserted, or one whose title was just archived,
+    // can read as absent for a moment, so it is checked again for a while.
+    m_gc_poll_end = armGetSystemTick() + armNsToTicks(5'000'000'000ULL);
 
     title::ForEachApplicationRecord([&](std::span<const NsApplicationRecord> records) {
         std::vector<u64> batch_ids;
@@ -1477,6 +1614,72 @@ void Menu::DeleteGames() {
 
         if (R_SUCCEEDED(rc)) {
             App::Notify("Delete successfull!"_i18n);
+        }
+    });
+}
+
+void Menu::RefreshGameCard() {
+    auto ids = GetGameCardAppIds();
+    if (ids == m_gc_app_ids) {
+        return;
+    }
+
+    m_gc_app_ids = std::move(ids);
+    for (auto& e : m_all_entries) {
+        LoadGameCardState(e, m_gc_app_ids);
+    }
+    for (auto& e : m_entries) {
+        LoadGameCardState(e, m_gc_app_ids);
+    }
+}
+
+void DependsArchive(SidebarEntryBase* archive, const Entry& e) {
+    if (!e.content_loaded || e.installed) {
+        return;
+    }
+
+    if (e.IsArchived()) {
+        archive->Depends([]{ return false; }, "This game is already archived."_i18n);
+    } else {
+        archive->Depends([]{ return false; }, "Nothing is installed, this game plays from its game card."_i18n);
+    }
+}
+
+void Menu::ArchiveGames() {
+    ArchiveEntries(GetSelectedEntries());
+    ClearSelection();
+}
+
+void ArchiveEntries(std::vector<Entry> targets) {
+    const auto image = targets.size() == 1 ? targets[0].image : 0;
+    App::Push<ProgressBox>(image, "Archiving"_i18n, "", [targets](auto pbox) mutable -> Result {
+        const auto gc_app_ids = GetGameCardAppIds();
+
+        for (s64 i = 0; i < std::size(targets); i++) {
+            auto& e = targets[i];
+
+            // the selection may not have been drawn yet. nothing installed
+            // covers both archived titles and game card only titles.
+            LoadContentState(e, gc_app_ids);
+            if (!e.installed) {
+                continue;
+            }
+
+            LoadControlEntry(e);
+            pbox->SetTitle(e.GetName());
+            pbox->UpdateTransfer(i + 1, std::size(targets));
+            R_TRY(nsDeleteApplicationEntity(e.app_id));
+        }
+
+        R_SUCCEED();
+    }, [](Result rc){
+        App::PushErrorBox(rc, "Archive failed!"_i18n);
+
+        // rescans the games menu.
+        SignalChange();
+
+        if (R_SUCCEEDED(rc)) {
+            App::Notify("Archive successful!"_i18n);
         }
     });
 }

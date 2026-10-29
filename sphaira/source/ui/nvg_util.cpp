@@ -387,6 +387,46 @@ void drawAppLable(NVGcontext* vg, const Theme* theme, ScrollingText& st, float x
     st.Draw(vg, true, text_x, text_y, box_w - text_pad * 2, font_size, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_SELECTED), name);
 }
 
+void drawCloud(NVGcontext* vg, float cx, float cy, float w, const NVGcolor& c)
+{
+    const auto h = w * 0.62f;
+    const auto base_h = h * 0.5f;
+    const auto base_y = cy + h / 2 - base_h;
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, cx - w / 2, base_y, w, base_h, base_h / 2);
+    nvgCircle(vg, cx - w * 0.2f, base_y + base_h * 0.15f, w * 0.2f);
+    nvgCircle(vg, cx + w * 0.06f, cy - h / 2 + w * 0.27f, w * 0.27f);
+    nvgCircle(vg, cx + w * 0.3f, base_y + base_h * 0.3f, w * 0.17f);
+    nvgFillColor(vg, c);
+    nvgFill(vg);
+}
+
+void drawGameCard(NVGcontext* vg, float cx, float cy, float h, const NVGcolor& c)
+{
+    const auto w = h * 0.72f;
+    const auto l = cx - w / 2;
+    const auto t = cy - h / 2;
+    const auto rr = h * 0.08f;
+    const auto cut = w * 0.3f;
+
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, l + rr, t);
+    nvgLineTo(vg, l + w - cut, t);
+    nvgLineTo(vg, l + w, t + cut);
+    nvgArcTo(vg, l + w, t + h, l, t + h, rr);
+    nvgArcTo(vg, l, t + h, l, t, rr);
+    nvgArcTo(vg, l, t, l + w, t, rr);
+    nvgClosePath(vg);
+
+    const auto pad = w * 0.18f;
+    nvgRoundedRect(vg, l + pad, t + h * 0.38f, w - pad * 2, h * 0.46f, rr / 2);
+    nvgPathWinding(vg, NVG_HOLE);
+
+    nvgFillColor(vg, c);
+    nvgFill(vg);
+}
+
 // https://github.com/memononen/nanovg/blob/f93799c078fa11ed61c078c65a53914c8782c00b/example/demo.c#L500
 void drawSpinner(NVGcontext* vg, const Theme* theme, float cx, float cy, float r, float t)
 {
