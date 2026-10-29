@@ -915,8 +915,32 @@ Result Menu::RestoreSaveInternal(ProgressBox* pbox, const Entry& e, const fs::Fs
 
     std::optional<NXSaveMeta> meta{};
 
+    // zips that were re-zipped by hand often have everything wrapped in a single folder.
+    // this is only handled if the meta file is inside that folder, so that saves which
+    // genuinely contain a single folder are never altered.
+    std::string prefix;
+    std::string meta_name = NX_SAVE_META_NAME;
+    if (UNZ_END_OF_LIST_OF_FILE == unzLocateFile(zfile, NX_SAVE_META_NAME, 0) && UNZ_OK == unzGoToFirstFile(zfile)) {
+        do {
+            unz_file_info64 info;
+            fs::FsPath name;
+            if (UNZ_OK != unzGetCurrentFileInfo64(zfile, &info, name, sizeof(name), 0, 0, 0, 0)) {
+                break;
+            }
+
+            const std::string_view view{name};
+            const auto slash = view.find('/');
+            if (slash != std::string_view::npos && slash == view.rfind('/') && view.substr(slash + 1) == NX_SAVE_META_NAME) {
+                prefix = view.substr(0, slash + 1);
+                meta_name = view;
+                log_write("zip is wrapped in folder: %s\n", prefix.c_str());
+                break;
+            }
+        } while (UNZ_OK == unzGoToNextFile(zfile));
+    }
+
     // get manifest
-    if (UNZ_END_OF_LIST_OF_FILE != unzLocateFile(zfile, NX_SAVE_META_NAME, 0)) {
+    if (UNZ_END_OF_LIST_OF_FILE != unzLocateFile(zfile, meta_name.c_str(), 0)) {
         log_write("found meta file\n");
         if (UNZ_OK == unzOpenCurrentFile(zfile)) {
             log_write("opened meta file\n");
@@ -932,9 +956,14 @@ Result Menu::RestoreSaveInternal(ProgressBox* pbox, const Entry& e, const fs::Fs
     }
 
     if (meta.has_value()) {
-        log_write("extending save file\n");
-        R_TRY(fsExtendSaveDataFileSystem(save_data_space_id, e.save_data_id, meta->data_size, meta->journal_size));
-        log_write("extended save file\n");
+        // extending to a size that is not larger than the current one fails with FsError_InvalidSize.
+        const auto data_size = std::max<s64>(meta->data_size, extra.data_size);
+        const auto journal_size = std::max<s64>(meta->journal_size, extra.journal_size);
+        if (data_size > extra.data_size || journal_size > extra.journal_size) {
+            log_write("extending save file\n");
+            R_TRY(fsExtendSaveDataFileSystem(save_data_space_id, e.save_data_id, data_size, journal_size));
+            log_write("extended save file\n");
+        }
     } else {
         log_write("doing manual meta parse\n");
         s64 total_size{};
@@ -958,17 +987,21 @@ Result Menu::RestoreSaveInternal(ProgressBox* pbox, const Entry& e, const fs::Fs
             fs::FsPath name;
             R_UNLESS(UNZ_OK == unzGetCurrentFileInfo64(zfile, &info, name, sizeof(name), 0, 0, 0, 0), Result_UnzGetCurrentFileInfo64);
 
-            if (name == NX_SAVE_META_NAME) {
+            if (name == meta_name.c_str() || !std::string_view{name}.starts_with(prefix)) {
                 continue;
             }
             total_size += info.uncompressed_size;
         }
 
-        // TODO: untested, should work tho.
-        const auto rounded_size = total_size + (total_size % extra.journal_size);
-        log_write("extendeing manual meta parse\n");
-        R_TRY(fsExtendSaveDataFileSystem(save_data_space_id, e.save_data_id, rounded_size, extra.journal_size));
-        log_write("extended manual meta parse\n");
+        // save data is allocated in 16 KiB blocks, so round up.
+        // only extend if the zip does not already fit, as shrinking / same size is invalid.
+        constexpr s64 BLOCK_SIZE = 0x4000;
+        const auto rounded_size = (total_size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
+        if (rounded_size > extra.data_size) {
+            log_write("extending manual meta parse\n");
+            R_TRY(fsExtendSaveDataFileSystem(save_data_space_id, e.save_data_id, rounded_size, extra.journal_size));
+            log_write("extended manual meta parse\n");
+        }
     }
 
     FsSaveDataAttribute attr{};
@@ -992,9 +1025,18 @@ Result Menu::RestoreSaveInternal(ProgressBox* pbox, const Entry& e, const fs::Fs
     // restore save data from zip.
     R_TRY(thread::TransferUnzipAll(pbox, zfile, &save_fs, "/", [&](const fs::FsPath& name, fs::FsPath& path) -> bool {
         // skip restoring the meta file.
-        if (name == NX_SAVE_META_NAME) {
+        if (name == meta_name.c_str()) {
             log_write("skipping meta\n");
             return false;
+        }
+
+        // skip anything outside of the wrapper folder and strip the folder from the rest.
+        if (!prefix.empty()) {
+            if (!std::string_view{name}.starts_with(prefix) || std::string_view{name}.size() == prefix.size()) {
+                return false;
+            }
+
+            path = fs::AppendPath("/", name.s + prefix.size());
         }
 
         // restore everything else.
