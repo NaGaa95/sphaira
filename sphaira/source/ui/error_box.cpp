@@ -186,6 +186,9 @@ auto GetCodeMessage(Result rc) -> const char* {
         case Result_MspDuplicateEntry: return "SphairaError_MspDuplicateEntry";
         case Result_MspNoPayload: return "SphairaError_MspNoPayload";
         case Result_YatiHttpReadFailed: return "SphairaError_YatiHttpReadFailed";
+        case Result_UsbBadPacketCrc: return "SphairaError_UsbBadPacketCrc";
+        case Result_UsbBadDataCrc: return "SphairaError_UsbBadDataCrc";
+        case Result_UsbRemoteError: return "SphairaError_UsbRemoteError";
     }
 
     return "";
