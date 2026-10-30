@@ -335,6 +335,7 @@ void ShowForwarderEditor(const FileAssocEntry& assoc, const RomDatabaseIndexs& d
         config.core_mode = values.core_mode;
         config.screenshot = values.screenshot;
         config.video_capture = values.video_capture;
+        config.native_game_mode = values.native_game_mode;
         config.svc_debug_mode = values.svc_debug_mode;
         std::snprintf(config.nacp.display_version, sizeof(config.nacp.display_version), "%s", values.version.c_str());
 

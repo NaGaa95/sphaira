@@ -24,6 +24,16 @@ enum class ForwarderSvcDebugMode : u8 {
     Disabled,
 };
 
+// Controls whether the forwarder gets a retail-range title id and
+// AllowDebug so SaltyNX/FPSLocker treats it like a native game process.
+// Automatic keeps the built-in path detections (currently NetherSX2);
+// Enabled and Disabled force the choice for any NRO.
+enum class ForwarderNativeGameMode : u8 {
+    Automatic,
+    Enabled,
+    Disabled,
+};
+
 struct OwoConfig {
     std::string nro_path;
     std::string args{};
@@ -38,6 +48,7 @@ struct OwoConfig {
     CpuCoreMode core_mode{CpuCoreMode::Three};
     bool screenshot{true};
     bool video_capture{true};
+    ForwarderNativeGameMode native_game_mode{ForwarderNativeGameMode::Automatic};
     ForwarderSvcDebugMode svc_debug_mode{ForwarderSvcDebugMode::Automatic};
 
     std::vector<u8> program_nca{};
