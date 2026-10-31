@@ -939,6 +939,29 @@ Result Menu::RestoreSaveInternal(ProgressBox* pbox, const Entry& e, const fs::Fs
         } while (UNZ_OK == unzGoToNextFile(zfile));
     }
 
+    if (!prefix.empty()) {
+        unz_global_info64 ginfo;
+        R_UNLESS(UNZ_OK == unzGetGlobalInfo64(zfile, &ginfo), Result_UnzGetGlobalInfo64);
+        R_UNLESS(UNZ_OK == unzGoToFirstFile(zfile), Result_UnzGoToFirstFile);
+
+        for (u64 i = 0; i < ginfo.number_entry; i++) {
+            R_TRY(pbox->ShouldExitResult());
+            if (i > 0) {
+                R_UNLESS(UNZ_OK == unzGoToNextFile(zfile), Result_UnzGoToNextFile);
+            }
+
+            unz_file_info64 info;
+            fs::FsPath name;
+            R_UNLESS(UNZ_OK == unzGetCurrentFileInfo64(zfile, &info, name, sizeof(name), 0, 0, 0, 0), Result_UnzGetCurrentFileInfo64);
+
+            const std::string_view view{name};
+            if (!view.starts_with(prefix) && !view.starts_with("__MACOSX/") && view != ".DS_Store") {
+                log_write("[SAVE] zip entry outside backup folder: %s\n", name.s);
+                R_THROW(Result_SaveInvalidArchiveLayout);
+            }
+        }
+    }
+
     // get manifest
     if (UNZ_END_OF_LIST_OF_FILE != unzLocateFile(zfile, meta_name.c_str(), 0)) {
         log_write("found meta file\n");

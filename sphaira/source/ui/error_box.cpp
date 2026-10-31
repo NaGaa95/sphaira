@@ -189,6 +189,7 @@ auto GetCodeMessage(Result rc) -> const char* {
         case Result_UsbBadPacketCrc: return "SphairaError_UsbBadPacketCrc";
         case Result_UsbBadDataCrc: return "SphairaError_UsbBadDataCrc";
         case Result_UsbRemoteError: return "SphairaError_UsbRemoteError";
+        case Result_SaveInvalidArchiveLayout: return "SphairaError_SaveInvalidArchiveLayout";
     }
 
     return "";
