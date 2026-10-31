@@ -606,7 +606,7 @@ Menu::Menu(u32 flags) : MenuBase{"GameCard"_i18n, flags} {
 
                 const auto add = [&](const std::string& name, u32 flags){
                     options->Add<SidebarEntryCallback>(name, [this, flags](){
-                        DumpGames(flags);
+                        App::PushErrorBox(DumpGames(flags), "Export failed!"_i18n);
                         m_dirty = true;
                     }, true);
                 };
@@ -620,7 +620,7 @@ Menu::Menu(u32 flags) : MenuBase{"GameCard"_i18n, flags} {
                 add("Export Initial Data"_i18n, DumpFileFlag_Initial);
             } else if (m_option_index == 2) {
 #ifdef ENABLE_NSZ
-                DumpXcz(0);
+                App::PushErrorBox(DumpXcz(0), "Export failed!"_i18n);
 #endif // ENABLE_NSZ
             } else if (m_option_index == 3) {
                 const auto rc = MountGcFs();
@@ -1225,18 +1225,19 @@ Result Menu::DumpGames(u32 flags) {
 
     // if trimmed and the user wants to dump the full xci, error.
     if ((flags & DumpFileFlag_XCI) && is_trimmed && App::GetApp()->m_dump_trim_xci.Get()) {
+        // the callback runs after DumpGames has returned, so capture by value.
         App::Push<ui::OptionBox>(
             "WARNING: GameCard is already trimmed!"_i18n,
-            "Back"_i18n, "Continue"_i18n, 0, [&](auto op_index){
+            "Back"_i18n, "Continue"_i18n, 0, [do_dump, flags](auto op_index){
                 if (op_index && *op_index) {
-                    do_dump(flags);
+                    App::PushErrorBox(do_dump(flags), "Export failed!"_i18n);
                 }
             }, m_icon
         );
     } else if ((flags & DumpFileFlag_XCI) && is_trimmed) {
         App::PushErrorBox(trim_rc, "GameCard is trimmed, full dump is not possible!"_i18n);
     } else {
-        do_dump(flags);
+        R_TRY(do_dump(flags));
     }
 
     R_SUCCEED();

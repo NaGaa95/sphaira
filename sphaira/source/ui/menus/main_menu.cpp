@@ -190,9 +190,9 @@ auto ParseLanguageHeading(std::string_view line) -> std::optional<std::string> {
     }
 
     auto code = Lower(Trim(line));
-    static constexpr std::array<std::string_view, 15> languages{
+    static constexpr std::array<std::string_view, 16> languages{
         "en", "ja", "fr", "de", "it", "es", "zh-cn", "ko", "nl",
-        "pt", "ru", "zh-tw", "se", "vi", "uk",
+        "pt", "ru", "zh-tw", "se", "vi", "uk", "tr",
     };
     if (std::ranges::find(languages, code) == languages.end()) {
         return {};
@@ -580,6 +580,7 @@ MainMenu::MainMenu() {
             language_items.push_back("Svenska"); // Swedish
             language_items.push_back("Tiếng Việt"); // Vietnamese
             language_items.push_back("Українська"); // Ukrainian
+            language_items.push_back("Türkçe"); // Turkish
 
             // build menus info.
             std::string menus_info = "Launch one of Sphaira's menus:\n"_i18n;
