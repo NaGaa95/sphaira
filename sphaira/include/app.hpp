@@ -70,6 +70,8 @@ public:
 
     // if R_FAILED(rc), pushes error box. returns rc passed in.
     static Result PushErrorBox(Result rc, const std::string& message);
+    // same, with extra detail shown under the message, such as the path that failed.
+    static Result PushErrorBox(Result rc, const std::string& message, const std::string& detail);
 
     static auto GetThemeMetaList() -> std::span<ThemeMeta>;
     static void SetTheme(s64 theme_index);
