@@ -224,6 +224,8 @@ private:
     // the console's answer, then the card's icon off the sd card: neither is a
     // reason to hold the shop's request up.
     std::unique_ptr<utils::Async> m_console{};
+    // the install queue's finished count when this page last looked.
+    u64 m_queue_finished{};
 };
 
 } // namespace sphaira::ui::menu::ownfoil

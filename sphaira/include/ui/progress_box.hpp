@@ -43,6 +43,12 @@ struct ProgressBox final : Widget {
     auto SetImageData(std::vector<u8>& data) -> ProgressBox&;
     auto SetImageDataConst(std::span<const u8> data) -> ProgressBox&;
 
+    // B puts the box away through on_hide instead of cancelling, X cancels.
+    // used by the install queue, which keeps the box running off the stack.
+    void SetHideAction(const std::function<void()>& on_hide);
+    // thread safe, for drawing the progress of a box that isn't on screen.
+    void GetProgress(s64& offset, s64& size);
+
     void RequestExit();
     auto ShouldExit() -> bool;
     auto ShouldExitResult() -> Result;
@@ -80,6 +86,8 @@ struct ProgressBox final : Widget {
 private:
     void FreeImage();
     auto GetFooterButtons() const -> Widget::uiButtons;
+    auto HasFooter() const -> bool;
+    void SetupPosition();
 
 public:
     struct ThreadData {
@@ -116,6 +124,7 @@ private:
     int m_image{};
     bool m_own_image{};
     bool m_screen_toggle_enabled{};
+    bool m_hideable{};
 };
 
 // this is a helper function that does many things.

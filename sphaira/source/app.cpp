@@ -26,6 +26,7 @@
 #include "swkbd.hpp"
 #include "usbdvd.hpp"
 
+#include "ui/install_queue.hpp"
 #include "utils/profile.hpp"
 #include "utils/thread.hpp"
 #include "utils/devoptab.hpp"
@@ -649,6 +650,28 @@ auto App::Push(std::unique_ptr<ui::Widget>&& widget) -> void {
     log_write("doing focus gained\n");
     g_app->m_widgets.emplace_back(std::forward<decltype(widget)>(widget))->OnFocusGained();
     log_write("did it\n");
+}
+
+auto App::Detach(const ui::Widget* widget) -> std::unique_ptr<ui::Widget> {
+    auto& widgets = g_app->m_widgets;
+    auto it = std::ranges::find_if(widgets, [widget](const auto& e) {
+        return e.get() == widget;
+    });
+
+    if (it == widgets.end()) {
+        return {};
+    }
+
+    const auto was_back = std::next(it) == widgets.end();
+    auto out = std::move(*it);
+    widgets.erase(it);
+    out->OnFocusLost();
+
+    if (was_back && !widgets.empty()) {
+        widgets.back()->OnFocusGained();
+    }
+
+    return out;
 }
 
 auto App::PopToMenu() -> void {
@@ -1276,6 +1299,8 @@ void App::Update() {
     if (!m_widgets.empty() && popped_at_least1) {
         m_widgets.back()->OnFocusGained();
     }
+
+    ui::InstallQueue::Get().Update();
 }
 
 void App::Draw() {
@@ -1311,6 +1336,7 @@ void App::Draw() {
         }
     }
 
+    ui::InstallQueue::Get().Draw(vg, &m_theme);
     m_notif_manager.Draw(vg, &m_theme);
 
     nvgResetTransform(vg);
@@ -2868,6 +2894,12 @@ App::~App() {
     {
         SCOPED_TIMESTAMP("TOTAL EXIT");
         appletUnhook(&m_appletHookCookie);
+
+        // stop a background install before the services it uses go away.
+        {
+            SCOPED_TIMESTAMP("install queue exit");
+            ui::InstallQueue::Get().Shutdown();
+        }
 
         // async exit as these threads sleep every 100ms.
         {

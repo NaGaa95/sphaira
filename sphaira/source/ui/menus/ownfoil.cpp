@@ -4,6 +4,7 @@
 #include "ui/sidebar.hpp"
 #include "ui/option_box.hpp"
 #include "ui/progress_box.hpp"
+#include "ui/install_queue.hpp"
 
 #include "app.hpp"
 #include "image.hpp"
@@ -1120,6 +1121,18 @@ void Menu::ShowSearch(s64 index) {
 void Menu::ShowOptions() {
     auto options = std::make_unique<Sidebar>("Options"_i18n, Sidebar::Side::RIGHT);
     ON_SCOPE_EXIT(App::Push(std::move(options)));
+
+    // the queue is reachable from either list, it outlives both.
+    {
+        const auto& queue = InstallQueue::Get();
+        auto title = "Install queue"_i18n;
+        if (const auto pending = queue.GetPendingCount(); queue.IsBusy()) {
+            title += " (" + std::to_string(pending + 1) + ")";
+        }
+        options->Add<SidebarEntryCallback>(title, [](){
+            InstallQueue::Get().ShowMenu();
+        }, false, "Installs running in the background and waiting their turn."_i18n);
+    }
 
     if (m_mode == Mode::ServerList) {
         options->Add<SidebarEntryCallback>("Add server"_i18n, [this](){
