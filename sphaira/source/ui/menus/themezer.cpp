@@ -55,8 +55,6 @@ constexpr const char* REQUEST_ORDER[]{
     "ASC"
 };
 
-// https://api.themezer.net/?query=query($nsfw:Boolean,$target:String,$page:Int,$limit:Int,$sort:String,$order:String,$query:String,$creators:[String!]){themeList(nsfw:$nsfw,target:$target,page:$page,limit:$limit,sort:$sort,order:$order,query:$query,creators:$creators){id,creator{id,display_name},details{name,description},last_updated,dl_count,like_count,target,preview{original,thumb}}}&variables={"nsfw":false,"target":null,"page":1,"limit":10,"sort":"updated","order":"desc","query":null,"creators":["695065006068334622"]}
-// https://api.themezer.net/?query=query($nsfw:Boolean,$page:Int,$limit:Int,$sort:String,$order:String,$query:String,$creators:[String!]){packList(nsfw:$nsfw,page:$page,limit:$limit,sort:$sort,order:$order,query:$query,creators:$creators){id,creator{id,display_name},details{name,description},last_updated,dl_count,like_count,themes{id,creator{display_name},details{name,description},last_updated,dl_count,like_count,target,preview{original,thumb}}}}&variables={"nsfw":false,"page":1,"limit":10,"sort":"updated","order":"desc","query":null,"creators":["695065006068334622"]}
 
 auto GetNroPath() -> const char* {
     fs::FsNativeSd fs;
@@ -132,7 +130,7 @@ auto apiBuildUrlDownloadInternal(const std::string& id, bool is_pack) -> std::st
         return {};
     }
     static constexpr std::string_view query =
-        "query($hexId:String!){switch{pack(hexId:$hexId){downloadUrl}}}";
+        "query($hexId:Hexadecimal!){switch{pack(hexId:$hexId){downloadUrl}}}";
     return BuildGraphqlUrl(query, "{\"hexId\":\"" + JsonEscape(id) + "\"}");
 }
 
@@ -285,7 +283,8 @@ auto from_json(const fs::FsPath& path, PackList& e) -> bool {
         from_json(yyjson_arr_get(nodes, i), e.packList[i]);
     }
     from_json(page_info, e.pagination);
-    return e.pagination.page_count > 0 && e.pagination.page_count <= 1000;
+    // an empty search is valid and has a page count of 0.
+    return e.pagination.page_count <= 1000;
 }
 
 struct ThemeInstallRequest {
@@ -311,7 +310,6 @@ auto InstallTheme(ProgressBox* pbox, const ThemeInstallRequest& request, std::ve
         log_write("using url: %s\n", url.c_str());
         const auto result = curl::Api().ToMemory(
             curl::Url{url},
-            curl::Header{{ "User-Agent", "themezer-nx" }},
             curl::OnProgress{pbox->OnDownloadProgressCallback()}
         );
 
@@ -552,6 +550,10 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
             gfx::drawTextArgs(vg, SCREEN_WIDTH / 2.f, SCREEN_HEIGHT / 2.f, 36.f, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_INFO), "Loading"_i18n.c_str());
             return;
         case PageLoadState::Done:
+            if (page.m_packList.empty()) {
+                gfx::drawTextArgs(vg, SCREEN_WIDTH / 2.f, SCREEN_HEIGHT / 2.f, 36.f, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_INFO), "Empty!"_i18n.c_str());
+                return;
+            }
             break;
         case PageLoadState::Error:
             gfx::drawTextArgs(vg, SCREEN_WIDTH / 2.f, SCREEN_HEIGHT / 2.f, 36.f, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_INFO), "Error loading page!"_i18n.c_str());
@@ -751,7 +753,6 @@ void Menu::PackListDownload() {
         curl::Url{packList_url},
         curl::Path{packlist_path},
         curl::Flags{curl::Flag_Cache},
-        curl::Header{{ "User-Agent", "themezer-nx" }},
         curl::StopToken{this->GetToken()},
         curl::OnComplete{[this, page_index, generation](auto& result){
             if (generation != m_generation) {
@@ -772,7 +773,8 @@ void Menu::PackListDownload() {
             }
 
             PackList a;
-            if (!from_json(result.path, a) || page_index > a.pagination.page_count) {
+            // a search with no results has a page count of 0, but there is still one (empty) page.
+            if (!from_json(result.path, a) || page_index > std::max<u64>(a.pagination.page_count, 1)) {
                 if (page_index <= m_pages.size()) {
                     m_pages[page_index - 1].m_ready = PageLoadState::Error;
                 }
@@ -783,13 +785,14 @@ void Menu::PackListDownload() {
                 return entry.id.empty() || entry.details.name.empty();
             });
 
-            m_pages.resize(a.pagination.page_count);
+            const auto page_count = std::max<u64>(a.pagination.page_count, 1);
+            m_pages.resize(page_count);
             auto& page = m_pages[page_index-1];
 
             page.m_packList = std::move(a.packList);
             page.m_pagination = a.pagination;
             page.m_ready = PageLoadState::Done;
-            m_page_index_max = a.pagination.page_count;
+            m_page_index_max = page_count;
 
             char subheading[128];
             std::snprintf(subheading, sizeof(subheading), "Page %zu / %zu"_i18n.c_str(), m_page_index+1, m_page_index_max);

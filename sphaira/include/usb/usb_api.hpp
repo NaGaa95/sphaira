@@ -44,7 +44,7 @@ protected:
     }
 
     Result Verify() const {
-        R_UNLESS(crc32c == CalculateCrc32c(), 1); // todo: add error code.
+        R_UNLESS(crc32c == CalculateCrc32c(), Result_UsbBadPacketCrc);
         R_UNLESS(magic == MAGIC, Result_UsbBadMagic);
         R_SUCCEED();
     }
@@ -75,7 +75,7 @@ struct ResultPacket : UsbPacket {
 
     Result Verify() const {
         R_TRY(UsbPacket::Verify());
-        R_UNLESS(arg2 == RESULT_OK, 1); // todo: create error code.
+        R_UNLESS(arg2 == RESULT_OK, Result_UsbRemoteError);
         R_SUCCEED();
     }
 };

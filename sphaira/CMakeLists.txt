@@ -116,6 +116,7 @@ add_executable(sphaira
     source/app.cpp
     source/download.cpp
     source/dumper.cpp
+    source/game_lang.cpp
     source/option.cpp
     source/evman.cpp
     source/fs.cpp
@@ -451,7 +452,7 @@ endif()
 if (ENABLE_LIBHAZE)
     FetchContent_Declare(libhaze
         GIT_REPOSITORY https://github.com/R-YaTian/libhaze.git
-        GIT_TAG f1c9c63
+        GIT_TAG 9f5467c
     )
 
     FetchContent_MakeAvailable(libhaze)
