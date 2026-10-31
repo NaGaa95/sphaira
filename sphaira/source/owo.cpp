@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <span>
+#include <utility>
 
 #include "yati/nx/nca.hpp"
 #include "yati/nx/ncm.hpp"
@@ -23,6 +24,7 @@
 #include "nacp_compat.hpp"
 #include "ui/progress_box.hpp"
 #include "i18n.hpp"
+#include "image.hpp"
 #include "log.hpp"
 
 namespace sphaira {
@@ -46,6 +48,78 @@ constexpr const u8 HBL_NPDM_DATA[]{
 };
 
 bool g_core_launch_pending{};
+
+auto lower_ascii(std::string_view value) -> std::string {
+    std::string out(value);
+    for (auto& c : out) {
+        if (c >= 'A' && c <= 'Z') {
+            c += 'a' - 'A';
+        }
+    }
+    return out;
+}
+
+auto is_nethersx2_nro_path(std::string_view path) -> bool {
+    while (!path.empty() && (path.front() == ' ' || path.front() == '"')) {
+        path.remove_prefix(1);
+    }
+    while (!path.empty() && (path.back() == ' ' || path.back() == '"')) {
+        path.remove_suffix(1);
+    }
+
+    const auto lower = lower_ascii(path);
+    const auto slash = lower.find_last_of("/\\");
+    const std::string_view file_name = slash == std::string::npos ? std::string_view(lower) : std::string_view(lower).substr(slash + 1);
+
+    // The launcher is normally /switch/NetherSX2.nro, but users may keep it
+    // under its own folder or use a differently-cased filename. Core NROs
+    // extracted by the launcher also live below a NetherSX2 directory.
+    return file_name == "nethersx2.nro" || lower.contains("/nethersx2/");
+}
+
+auto remove_sdmc_prefixes(std::string value) -> std::string {
+    constexpr std::string_view prefix = "sdmc:";
+    for (auto pos = value.find(prefix); pos != std::string::npos; pos = value.find(prefix, pos)) {
+        value.erase(pos, prefix.size());
+    }
+    return value;
+}
+
+auto forwarder_path_hash(std::string_view hash_path) -> u64 {
+    u64 hash_data[SHA256_HASH_SIZE / sizeof(u64)];
+    sha256CalculateHash(hash_data, hash_path.data(), hash_path.length());
+    return hash_data[0];
+}
+
+auto homebrew_forwarder_tid(u64 hash) -> u64 {
+    return 0x0500000000000000 | (hash & 0x00FFFFFFFFFFF000);
+}
+
+auto legacy_retail_forwarder_tid(u64 hash) -> u64 {
+    return 0x0100000000000000 | (hash & 0x00FFFFFFFFFFF000);
+}
+
+auto native_game_forwarder_tid(u64 hash) -> u64 {
+    // The E000 mask guarantees (tid & 0x1F00) == 0, like a retail base title.
+    return 0x0100000000000000 | (hash & 0x00FFFFFFFFFFE000);
+}
+
+void append_forwarder_tid_candidates(std::vector<u64>& tids, u64 hash) {
+    tids.emplace_back(homebrew_forwarder_tid(hash));
+    tids.emplace_back(legacy_retail_forwarder_tid(hash));
+    tids.emplace_back(native_game_forwarder_tid(hash));
+}
+
+// Label non-default address spaces on the HOME icon.
+auto address_space_icon_label(ForwarderAddressSpace address_space) -> std::string_view {
+    switch (address_space) {
+        case ForwarderAddressSpace::Bit32: return "32-BIT";
+        case ForwarderAddressSpace::Bit32NoAlias: return "32-BIT NA";
+        case ForwarderAddressSpace::Bit39: return "39-BIT";
+        case ForwarderAddressSpace::Bit36: return {};
+    }
+    return {};
+}
 
 // stdio-like wrapper for std::vector
 struct BufHelper {
@@ -150,6 +224,9 @@ struct NpdmPatch {
     ForwarderAddressSpace address_space{ForwarderAddressSpace::Bit36};
     CpuCoreMode core_mode{CpuCoreMode::Three};
     ForwarderSvcDebugMode svc_debug_mode{ForwarderSvcDebugMode::Automatic};
+    // sets AllowDebug instead of ForceDebug in the DebugFlags capability,
+    // ie. the process can be debugged rather than being a debugger itself.
+    bool allow_debug{};
 };
 
 struct NcapPatch {
@@ -505,10 +582,22 @@ auto patch_npdm(std::vector<u8>& npdm, const NpdmPatch& patch) -> bool {
         npdm_patch_kc(npdm, meta.acid_offset + acid.kac_offset, acid.kac_size, 16, BIT(19));
     }
 
+    // must be applied after the svc debug block above, as npdm_patch_kc
+    // rewrites the whole DebugFlags capability and only one of the three
+    // debug flag bits may be set (HOS 19+ validation).
+    // BIT(17) is AllowDebug, BIT(19) is ForceDebug.
+    bool aci0_allow_debug_patched = !patch.allow_debug;
+    bool acid_allow_debug_patched = !patch.allow_debug;
+    if (patch.allow_debug) {
+        aci0_allow_debug_patched = npdm_patch_kc(npdm, meta.aci0_offset + aci0.kac_offset, aci0.kac_size, 16, BIT(17));
+        acid_allow_debug_patched = npdm_patch_kc(npdm, meta.acid_offset + acid.kac_offset, acid.kac_size, 16, BIT(17));
+        log_write("[owo] AllowDebug NPDM patch ACI0:%u ACID:%u\n", aci0_allow_debug_patched, acid_allow_debug_patched);
+    }
+
     std::memcpy(npdm.data(), &meta, sizeof(meta));
     std::memcpy(npdm.data() + meta.aci0_offset, &aci0, sizeof(aci0));
     std::memcpy(npdm.data() + meta.acid_offset, &acid, sizeof(acid));
-    return aci0_core_patched && acid_core_patched;
+    return aci0_core_patched && acid_core_patched && aci0_allow_debug_patched && acid_allow_debug_patched;
 }
 
 void patch_nacp(NacpStruct& nacp, const NcapPatch& patch) {
@@ -912,12 +1001,33 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         config.args = config.nro_path + ' ' + config.args;
     }
 
-    // create tid by using a hash over path + args
-    u64 hash_data[SHA256_HASH_SIZE / sizeof(u64)];
+    // Keep one forwarder identity per path and arguments, including older installs.
     const auto hash_path = config.nro_path + config.args;
-    sha256CalculateHash(hash_data, hash_path.data(), hash_path.length());
-    const u64 old_tid = 0x0100000000000000 | (hash_data[0] & 0x00FFFFFFFFFFF000);
-    const u64 tid = 0x0500000000000000 | (hash_data[0] & 0x00FFFFFFFFFFF000);
+    const auto hash = forwarder_path_hash(hash_path);
+
+    // A native-game forwarder gets a retail-range title id and AllowDebug
+    // so SaltyNX (NX-FPS / FPSLocker) can attach to its process. SaltyNX
+    // has no force-debug permission, so svcDebugActiveProcess fails with
+    // 0xfa01 (kernel 125, InvalidState) for the normal homebrew 0x05 range.
+    // Automatic keeps the existing built-in opt-in for NetherSX2, while
+    // Enabled/Disabled let the user force the choice for any emulator or
+    // other homebrew in the forwarder editor.
+    const bool detected_nethersx2 = is_nethersx2_nro_path(config.nro_path);
+    const bool native_game = config.native_game_mode == ForwarderNativeGameMode::Enabled
+        || (config.native_game_mode == ForwarderNativeGameMode::Automatic && detected_nethersx2);
+    const u64 tid = native_game ? native_game_forwarder_tid(hash) : homebrew_forwarder_tid(hash);
+
+    // Include earlier title-id formats and paths without the sdmc: prefix.
+    std::vector<u64> legacy_tids;
+    append_forwarder_tid_candidates(legacy_tids, hash);
+    const auto hash_path_without_sdmc = remove_sdmc_prefixes(hash_path);
+    if (hash_path_without_sdmc != hash_path) {
+        append_forwarder_tid_candidates(legacy_tids, forwarder_path_hash(hash_path_without_sdmc));
+    }
+
+    log_write("[owo] forwarder path:%s args:%s address_space:%u native_game_mode:%u detected_nethersx2:%u native_game:%u tid:%016lX\n",
+        config.nro_path.c_str(), config.args.c_str(), static_cast<unsigned>(config.address_space),
+        static_cast<unsigned>(config.native_game_mode), detected_nethersx2, native_game, tid);
 
     std::vector<NcaEntry> nca_entries;
 
@@ -944,7 +1054,8 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         npdm_patch.tid = tid;
         npdm_patch.address_space = config.address_space;
         npdm_patch.core_mode = config.core_mode;
-        npdm_patch.svc_debug_mode = config.svc_debug_mode;
+        npdm_patch.allow_debug = native_game;
+        npdm_patch.svc_debug_mode = native_game ? ForwarderSvcDebugMode::Disabled : config.svc_debug_mode;
         R_UNLESS(patch_npdm(exefs[1].data, npdm_patch), Result_CoreUnavailable);
 
         nca_entries.emplace_back(
@@ -969,9 +1080,20 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         nacp_patch.video_capture = config.video_capture;
         patch_nacp(config.nacp, nacp_patch);
 
+        // Mark non-default address spaces on the icon itself, so multiple
+        // forwarders for the same NRO can be told apart on the HOME menu.
+        auto icon = config.icon;
+        if (const auto label = address_space_icon_label(config.address_space); !label.empty()) {
+            if (auto labelled = ImageIconWithLabel(icon, label); !labelled.empty()) {
+                icon = std::move(labelled);
+            } else {
+                log_write("[owo] failed to draw address space label onto icon\n");
+            }
+        }
+
         FileEntries romfs;
         add_file_entry(romfs, "/control.nacp", &config.nacp, sizeof(config.nacp));
-        add_file_entry(romfs, "/icon_AmericanEnglish.dat", config.icon);
+        add_file_entry(romfs, "/icon_AmericanEnglish.dat", icon);
 
         nca_entries.emplace_back(
             create_control_nca(tid, keys, romfs)
@@ -1029,19 +1151,37 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
     {
         pbox->NewTransfer("Pushing application record"_i18n).UpdateTransfer(5, 8);
 
-        // remove old id for forwarders.
-        const auto rc = nsDeleteApplicationCompletely(old_tid);
-        if (R_FAILED(rc) && rc != 0x410) { // not found
-            App::Notify("Failed to remove old forwarder, please manually remove it!"_i18n);
-        }
-
-        // remove previous ncas.
-        nsDeleteApplicationEntity(tid);
-
         R_TRY(ns::PushApplicationRecord(tid, &content_storage_record, 1));
 
         // force flush.
         ns::InvalidateApplicationControlCache(tid);
+
+        // remove old ids for forwarders.
+        bool failed_to_remove_old{};
+        for (u32 i = 0; i < legacy_tids.size(); i++) {
+            const auto legacy_tid = legacy_tids[i];
+            if (legacy_tid == tid) {
+                continue;
+            }
+
+            bool duplicate{};
+            for (u32 j = 0; j < i; j++) {
+                duplicate |= legacy_tids[j] == legacy_tid;
+            }
+            if (duplicate) {
+                continue;
+            }
+
+            const auto rc = nsDeleteApplicationCompletely(legacy_tid);
+            log_write("[owo] remove legacy forwarder tid:%016lX rc:0x%X\n", legacy_tid, rc);
+            if (R_FAILED(rc) && rc != 0x410) { // not found
+                failed_to_remove_old = true;
+            }
+            ns::InvalidateApplicationControlCache(legacy_tid);
+        }
+        if (failed_to_remove_old) {
+            App::Notify("Failed to remove old forwarder, please manually remove it!"_i18n);
+        }
     }
 
     R_SUCCEED();

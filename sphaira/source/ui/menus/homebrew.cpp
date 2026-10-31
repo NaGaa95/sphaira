@@ -649,6 +649,7 @@ void Menu::ShowForwarderForm(const fs::FsPath& path, std::vector<u8> icon) {
         config.core_mode = values.core_mode;
         config.screenshot = values.screenshot;
         config.video_capture = values.video_capture;
+        config.native_game_mode = values.native_game_mode;
         config.svc_debug_mode = values.svc_debug_mode;
 
         if (R_FAILED(App::Install(config))) {

@@ -556,6 +556,7 @@
   "Enable Video Capture": "Enable Video Capture",
   "Allow video capture while the forwarder is running": "Allow video capture while the forwarder is running",
   "svcDebug Mode": "svcDebug Mode",
+  "Native Game (FPSLocker)": "Native Game (FPSLocker)",
   "Automatic (Default)": "Automatic (Default)",
   "Enabled": "Enabled",
   "Disabled": "Disabled",

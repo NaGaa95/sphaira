@@ -183,6 +183,35 @@ auto ImageLoadFromMemoryInternal(std::span<const u8> data, u32 flags, const Imag
     return ImageLoadInternal(image_data, x, y, limits);
 }
 
+// 5x7 bitmap glyphs, MSB is the leftmost pixel. Only the characters used
+// by the icon labels (eg. "32-BIT NA", "39-BIT") are defined.
+struct LabelGlyph {
+    char ch;
+    u8 rows[7];
+};
+
+constexpr LabelGlyph LABEL_GLYPHS[] = {
+    {'2', {0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111}},
+    {'3', {0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110}},
+    {'9', {0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100}},
+    {'-', {0, 0, 0, 0b01110, 0, 0, 0}},
+    {'A', {0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001}},
+    {'B', {0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110}},
+    {'I', {0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110}},
+    {'N', {0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001}},
+    {'T', {0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100}},
+    {' ', {0, 0, 0, 0, 0, 0, 0}},
+};
+
+auto FindLabelGlyph(char ch) -> const LabelGlyph* {
+    for (const auto& glyph : LABEL_GLYPHS) {
+        if (glyph.ch == ch) {
+            return &glyph;
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
 
 auto ImageLoadFromMemory(std::span<const u8> data, u32 flags) -> ImageResult {
@@ -285,6 +314,81 @@ auto ImageNormalizeIcon(std::span<const u8> data) -> std::vector<u8> {
     auto image = ImageLoadIcon(data);
     if (image.data.empty()) {
         return {};
+    }
+
+    return ImageConvertToJpg(image.data, image.w, image.h).data;
+}
+
+auto ImageIconWithLabel(std::span<const u8> data, std::string_view label) -> std::vector<u8> {
+    if (label.empty()) {
+        return {};
+    }
+    for (const auto ch : label) {
+        if (!FindLabelGlyph(ch)) {
+            log_write("unsupported icon label character: %c\n", ch);
+            return {};
+        }
+    }
+
+    // Decode like ImageLoadIcon, but never through NVJPG: this runs on the
+    // install worker thread, away from the GPU decoder.
+    auto image = ImageLoadFromMemoryInternal(data, ImageFlag_None, {ICON_MAX_DIMENSION, ICON_MAX_PIXELS});
+    if (image.data.empty()) {
+        return {};
+    }
+    if (image.w != ICON_SIZE || image.h != ICON_SIZE) {
+        image = ImageResize(image.data, image.w, image.h, ICON_SIZE, ICON_SIZE);
+        if (image.data.empty()) {
+            return {};
+        }
+    }
+
+    constexpr int GLYPH_W = 5;
+    constexpr int GLYPH_H = 7;
+    constexpr int ADVANCE = 6; // glyph width + one spacing column, pre-scale.
+
+    int scale = 4;
+    const auto text_width = [&label](int s) {
+        return static_cast<int>(label.size()) * ADVANCE * s - s;
+    };
+    while (scale > 1 && text_width(scale) > ICON_SIZE - 16) {
+        scale--;
+    }
+
+    const int text_w = text_width(scale);
+    const int text_h = GLYPH_H * scale;
+    const int band_h = text_h + 16;
+    const int band_y = ICON_SIZE - band_h;
+
+    // Darken the band so the label stays readable over any artwork.
+    for (int y = band_y; y < ICON_SIZE; y++) {
+        for (int x = 0; x < ICON_SIZE; x++) {
+            auto* px = &image.data[(y * ICON_SIZE + x) * BPP];
+            px[0] = static_cast<u8>(px[0] * 70 / 255);
+            px[1] = static_cast<u8>(px[1] * 70 / 255);
+            px[2] = static_cast<u8>(px[2] * 70 / 255);
+            px[3] = 255;
+        }
+    }
+
+    int cx = (ICON_SIZE - text_w) / 2;
+    const int cy = band_y + (band_h - text_h) / 2;
+    for (const auto ch : label) {
+        const auto* glyph = FindLabelGlyph(ch);
+        for (int row = 0; row < GLYPH_H; row++) {
+            for (int col = 0; col < GLYPH_W; col++) {
+                if (!(glyph->rows[row] & (1 << (GLYPH_W - 1 - col)))) {
+                    continue;
+                }
+                for (int dy = 0; dy < scale; dy++) {
+                    for (int dx = 0; dx < scale; dx++) {
+                        auto* px = &image.data[((cy + row * scale + dy) * ICON_SIZE + cx + col * scale + dx) * BPP];
+                        px[0] = px[1] = px[2] = px[3] = 255;
+                    }
+                }
+            }
+        }
+        cx += ADVANCE * scale;
     }
 
     return ImageConvertToJpg(image.data, image.w, image.h).data;
