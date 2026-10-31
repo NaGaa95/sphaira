@@ -110,9 +110,7 @@ void append_forwarder_tid_candidates(std::vector<u64>& tids, u64 hash) {
     tids.emplace_back(native_game_forwarder_tid(hash));
 }
 
-// Text drawn onto the HOME icon of forwarders using a non-default address
-// space, so side-by-side entries for the same NRO can be told apart. The
-// default 36-bit space keeps the original icon.
+// Label non-default address spaces on the HOME icon.
 auto address_space_icon_label(ForwarderAddressSpace address_space) -> std::string_view {
     switch (address_space) {
         case ForwarderAddressSpace::Bit32: return "32-BIT";
@@ -1003,16 +1001,8 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         config.args = config.nro_path + ' ' + config.args;
     }
 
-    // create tid by using a hash over path + args. A non-default address
-    // space is part of the hash, so forwarders for the same NRO that differ
-    // only in address space (eg. a 32-bit and a 39-bit launcher entry) get
-    // different title ids and coexist instead of overwriting each other.
-    // The default 36-bit space keeps the historical unsalted hash, so the
-    // title ids of forwarders installed by earlier builds do not change.
-    auto hash_path = config.nro_path + config.args;
-    if (config.address_space != ForwarderAddressSpace::Bit36) {
-        hash_path += "\naddress-space=" + std::to_string(static_cast<unsigned>(config.address_space)) + "\nsphaira-forwarder=1";
-    }
+    // Keep one forwarder identity per path and arguments, including older installs.
+    const auto hash_path = config.nro_path + config.args;
     const auto hash = forwarder_path_hash(hash_path);
 
     // A native-game forwarder gets a retail-range title id and AllowDebug
@@ -1027,13 +1017,7 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         || (config.native_game_mode == ForwarderNativeGameMode::Automatic && detected_nethersx2);
     const u64 tid = native_game ? native_game_forwarder_tid(hash) : homebrew_forwarder_tid(hash);
 
-    // Reinstalling under a different mode changes the title id. Remove the
-    // other representations Sphaira may have used for this same
-    // path+args+address space, otherwise duplicate HOME icons can remain
-    // and an old copy without the requested title-id/debug settings may be
-    // launched. Forwarders hashed with a different address space are
-    // separate entries and are deliberately kept. Also cover older
-    // installs whose hash input did not include the sdmc: prefix.
+    // Include earlier title-id formats and paths without the sdmc: prefix.
     std::vector<u64> legacy_tids;
     append_forwarder_tid_candidates(legacy_tids, hash);
     const auto hash_path_without_sdmc = remove_sdmc_prefixes(hash_path);
@@ -1167,6 +1151,11 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
     {
         pbox->NewTransfer("Pushing application record"_i18n).UpdateTransfer(5, 8);
 
+        R_TRY(ns::PushApplicationRecord(tid, &content_storage_record, 1));
+
+        // force flush.
+        ns::InvalidateApplicationControlCache(tid);
+
         // remove old ids for forwarders.
         bool failed_to_remove_old{};
         for (u32 i = 0; i < legacy_tids.size(); i++) {
@@ -1193,14 +1182,6 @@ auto install_forwader_internal(ui::ProgressBox* pbox, OwoConfig& config, NcmStor
         if (failed_to_remove_old) {
             App::Notify("Failed to remove old forwarder, please manually remove it!"_i18n);
         }
-
-        // remove previous ncas.
-        nsDeleteApplicationEntity(tid);
-
-        R_TRY(ns::PushApplicationRecord(tid, &content_storage_record, 1));
-
-        // force flush.
-        ns::InvalidateApplicationControlCache(tid);
     }
 
     R_SUCCEED();
