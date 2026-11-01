@@ -57,7 +57,7 @@ private:
     void Start(Job& job);
     void Show();
     void Hide();
-    void CancelRunning();
+    void CancelRunning(u64 id);
     void Remove(u64 id);
     void ClearFinished();
     auto GetRunning() -> Job*;

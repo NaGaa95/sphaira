@@ -154,9 +154,10 @@ void InstallQueue::Show() {
     App::Push(std::move(m_hidden));
 }
 
-void InstallQueue::CancelRunning() {
+void InstallQueue::CancelRunning(u64 id) {
+    auto job = GetRunning();
     auto box = GetRunningBox();
-    if (!box) {
+    if (!job || job->id != id || !box) {
         return;
     }
 
@@ -307,9 +308,15 @@ void InstallQueue::ShowMenu() {
 
     if (m_box) {
         options->Add<SidebarEntryCallback>("Cancel current install"_i18n, [this](){
-            App::Push<OptionBox>("Cancel the current install?"_i18n, "No"_i18n, "Yes"_i18n, 1, [this](auto op_index){
+            auto job = GetRunning();
+            if (!job) {
+                return;
+            }
+
+            const auto id = job->id;
+            App::Push<OptionBox>("Cancel the current install?"_i18n, "No"_i18n, "Yes"_i18n, 1, [this, id](auto op_index){
                 if (op_index && *op_index) {
-                    CancelRunning();
+                    CancelRunning(id);
                 }
             });
         }, true);
