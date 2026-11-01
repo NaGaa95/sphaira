@@ -94,7 +94,7 @@ Result Usb::Read(void* buf, u64 off, u32 size, u64* bytes_read) {
     R_TRY(m_usb->TransferAll(true, buf, size));
 
     // verify crc32c.
-    R_UNLESS(crc32cCalculate(buf, size) == recv_header.arg4, 3);
+    R_UNLESS(crc32cCalculate(buf, size) == recv_header.arg4, Result_UsbBadDataCrc);
 
     *bytes_read = size;
     R_SUCCEED();

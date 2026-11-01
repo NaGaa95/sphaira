@@ -35,7 +35,7 @@ option(ENABLE_DEVOPTAB_WEBDAV "" ON)
 # it also adds 230k to binary size, and i don't think anyone will use it.
 option(ENABLE_DEVOPTAB_SFTP "" OFF)
 
-set(sphaira_VERSION 1.0.7)
+set(sphaira_VERSION 1.0.8)
 
 project(sphaira
     VERSION ${sphaira_VERSION}
@@ -117,6 +117,7 @@ add_executable(sphaira
     source/app.cpp
     source/download.cpp
     source/dumper.cpp
+    source/game_lang.cpp
     source/option.cpp
     source/evman.cpp
     source/fs.cpp
@@ -452,7 +453,7 @@ endif()
 if (ENABLE_LIBHAZE)
     FetchContent_Declare(libhaze
         GIT_REPOSITORY https://github.com/R-YaTian/libhaze.git
-        GIT_TAG f1c9c63
+        GIT_TAG 9f5467c
     )
 
     FetchContent_MakeAvailable(libhaze)
