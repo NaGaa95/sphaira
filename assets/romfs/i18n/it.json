@@ -425,6 +425,16 @@
     "I dispositivi collegati possono essere utilizzati nell'Esplora File, nonché come backup per il dump di giochi e salvataggi."
   ],
   "HDD write protect": "Protezione da scrittura HDD",
+  "Show system files": "Mostra file di sistema",
+  "hdd_show_system_files_info": [
+    "Solo NTFS. Mostra gli elementi contrassegnati da Windows come file di sistema, ad esempio $Recycle.Bin. ",
+    "Lascia questa opzione disabilitata, a meno che tu non sappia cosa stai facendo."
+  ],
+  "Mount hibernated NTFS": "Monta unità NTFS in ibernazione",
+  "hdd_ignore_hibernation_info": [
+    "Solo NTFS. Monta un'unità lasciata in stato di ibernazione da Windows (avvio rapido). ",
+    "ATTENZIONE: la sessione di Windows salvata su quell'unità andrà persa."
+  ],
   "Makes the connected HDD read-only.": "Rende di sola lettura l'HDD collegato.",
   "Installing is disabled, enable now?": "L'installazione è disabilitata, abilitarla adesso?",
   "WARNING: Installing apps will lead to a ban!": "ATTENZIONE: l'installazione di app comporta il ban della console!",
@@ -586,6 +596,8 @@
   "Create Forwarder": "Crea forwarder",
   "36-bit (Default)": "36 bit (predefinito)",
   "39-bit": "39 bit",
+  "32-bit": "32 bit",
+  "32-bit (no alias)": "32 bit (senza alias)",
   "The title and icon must be non-empty!": "Il titolo e l'icona non devono essere vuoti!",
   "Name": "Nome",
   "Set the name of the application": "Imposta il nome dell'applicazione",
@@ -775,6 +787,12 @@
   "Game Options": "Opzioni di gioco",
   "Hide forwarders": "Nascondi i forwarder",
   "Launch random game": "Avvia un gioco casuale",
+  "System default": "Predefinita di sistema",
+  " (not supported)": " (non supportato)",
+  "Launch language": "Lingua di avvio",
+  "Failed to set language!": "Impossibile impostare la lingua!",
+  "Language set! Takes effect on next launch.": "Lingua impostata! La modifica sarà applicata al prossimo avvio.",
+  "Forces this game to launch in the selected language.\nRequires Atmosphere.": "Forza l'avvio del gioco nella lingua selezionata.\nRichiede Atmosphère.",
   "Export NSP": "Esporta NSP",
   "Not supported in Applet Mode": "Non supportato in modalità applet",
   "Export NSZ": "Esporta NSZ",
@@ -976,6 +994,15 @@
     "Visualizza i dati di salvataggio per ciascun utente. Si possono eseguire backup e ripristinare i salvataggi.\n",
     "È anche possibile eseguire il backup dei salvataggi di sistema (sperimentale)."
   ],
+  "Browse the screenshots and clips saved on the console. Captures can be viewed and deleted from here.": [
+    "Sfoglia gli screenshot e le clip salvate sulla console.\n",
+    "Da qui puoi visualizzare ed eliminare le catture."
+  ],
+  "Download themes from themezer.net. Themes are downloaded to /themes/sphaira\nTo install the themes, NXThemesInstaller needs to be installed (can be downloaded via the AppStore).": [
+    "Scarica temi da themezer.net. ",
+    "I temi vengono scaricati in /themes/sphaira.",
+    "Per installare i temi, è necessario che NXThemesInstaller sia installato (può essere scaricato tramite App Store)."
+  ],
   "Download releases directly from GitHub. Custom entries can be added to /config/sphaira/github": [
     "Scarica le release direttamente da GitHub. Le voci personalizzate possono essere ",
     "aggiunte su /config/sphaira/github"
@@ -1024,12 +1051,14 @@
     "Se Sphaira ha un aggiornamento disponibile, puoi scaricarlo da questo menù"
   ],
   "network_options_info": "Attiva/disattiva FTP, MTP, HDD e NXlink",
+  "by ": "di ",
   "Switch Ports": "Port per Switch",
   "Downloading Switch Ports catalog": "Download del catalogo dei port per Switch",
   "Failed to download Switch Ports catalog": "Impossibile scaricare il catalogo dei port per Switch",
   "Resolving port download": "Preparazione del download del port",
   "Failed to resolve port download": "Impossibile preparare il download del port",
   "Browse ports from this category.": "Esplora i port di questa categoria.",
+  "Default install folder: ": "Cartella di installazione predefinita: ",
   "Install ": "Installa ",
   "Destination: ": "Destinazione: ",
   "Only the homebrew port is downloaded. Original game data may still be required.": "Viene scaricato solo il port homebrew. Potrebbero essere comunque necessari i dati del gioco originale.",
@@ -1051,6 +1080,7 @@
   "System %.1f GB": "Sistema %.1f GB",
   "microSD %.1f GB": "microSD %.1f GB",
   "[Applet Mode]": "[Modalità applet]",
+  "Wi-Fi %.0f%%": "Wi-Fi %.0f%%",
   "Ethernet": "Ethernet",
   "No Internet": "Nessuna connessione a Internet",
   "State: %s | Speed: %s": "Stato: %s | Velocità: %s",
@@ -1189,9 +1219,6 @@
     "NOTA: è necessario riavviare Sphaira affinché le modifiche abbiano effetto!"
   ],
   "Section #": "Sezione n. ",
-  "by ": "di ",
-  "Default install folder: ": "Cartella di installazione predefinita: ",
-  "Wi-Fi %.0f%%": "Wi-Fi %.0f%%",
   "CPU Cores": "Core CPU",
   "3 (Default)": "3 (Predefinito)",
   "4 (Advanced)": "4 (Avanzato)",
@@ -1206,6 +1233,7 @@
   "Failed to add Homebrew search path": "Impossibile aggiungere il percorso di ricerca homebrew",
   "Failed to remove Homebrew search path": "Impossibile rimuovere il percorso di ricerca homebrew",
   "Screen Off": "Spegni lo schermo",
+  "Ownfoil": "Ownfoil",
   "Browse and install titles from a self-hosted Ownfoil server.\n\nInternet connection required.": "Esplora e installa titoli da un server Ownfoil self-hostato.\n\nRichiede una connessione a Internet.",
   "Add a server.": "Aggiungi un server.",
   "Change the selected server's name, addresses or login.": "Modifica nome, indirizzi o credenziali del server selezionato.",
@@ -1333,5 +1361,32 @@
   "Album share PIN": "PIN condivisione album",
   "Serves the album on this port.": "Condivide l'album su questa porta.",
   "Browse": "Sfoglia",
-  "Starts the server and shows the address and the QR code.": "Avvia il server e mostra l'indirizzo e il codice QR."
+  "Starts the server and shows the address and the QR code.": "Avvia il server e mostra l'indirizzo e il codice QR.",
+  "Queued ": "In coda ",
+  "Installing in the background": "Installazione in background",
+  "Waiting": "In attesa",
+  "Installing": "Installazione in corso",
+  "Failed": "Fallita",
+  "Cancelled": "Annullata",
+  "Install queue": "Coda di installazione",
+  "Nothing queued": "Nulla in coda",
+  "Titles you install from Ownfoil appear here.": "I titoli installati tramite Ownfoil vengono visualizzati qui.",
+  "Show its progress. B there puts it back in the background, X cancels it.": "Mostra l'avanzamento dell'installazione. B la mette in background, X la annulla.",
+  "Remove it from the queue.": "Rimuovi dalla coda.",
+  "Error": "Errore",
+  "Cancel current install": "Annulla installazione in corso",
+  "Cancel the current install?": "Annullare l'installazione in corso?",
+  "Remove all waiting": "Rimuovi tutte le installazioni in attesa",
+  "Clear finished": "Rimuovi le installazioni completate",
+  "Background": "In background",
+  "Cancel": "Annulla",
+  "Installs are still running. Exit anyway?": "Ci sono ancora installazioni in corso. Uscire comunque?",
+  "Installs running in the background and waiting their turn.": "Installazioni in esecuzione in background e in attesa del proprio turno.",
+  "Not enough free space on the install location. Free up space or change the install location.": "Spazio libero insufficiente nel percorso di installazione. Libera spazio o modifica il percorso di installazione.",
+  "Your keys are missing or outdated. Dump prod.keys again with the latest Lockpick_RCM.": "Chiavi mancanti o obsolete. Estrai nuovamente prod.keys con l'ultima versione di Lockpick_RCM.",
+  "Failed to decompress the NCZ. Try installing from the SD card or use the USB install script.": "Impossibile decomprimere il file NCZ. Prova a installarlo dalla scheda SD oppure usa lo script di installazione USB.",
+  "No game card was found. Make sure it is inserted correctly.": "Nessuna cartuccia rilevata. Assicurati che sia inserita correttamente.",
+  "Failed to paste one or more files": "Impossibile incollare uno o più file",
+  "Path: ": "Percorso: ",
+  "The file or folder is in use. Close any running software, turn off FTP / MTP, or restart the console.": "Il file o la cartella è in uso. Chiudi i software in esecuzione, disattiva FTP / MTP oppure riavvia la console."
 }
