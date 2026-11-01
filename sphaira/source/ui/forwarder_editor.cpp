@@ -29,6 +29,7 @@ enum class Row {
     CpuCores,
     Screenshot,
     VideoCapture,
+    NativeGame,
     SvcDebug,
     Create,
 };
@@ -63,6 +64,7 @@ public:
             m_rows.emplace_back(Row::CpuCores);
             m_rows.emplace_back(Row::Screenshot);
             m_rows.emplace_back(Row::VideoCapture);
+            m_rows.emplace_back(Row::NativeGame);
             m_rows.emplace_back(Row::SvcDebug);
         }
         m_rows.emplace_back(Row::Create);
@@ -299,6 +301,13 @@ private:
             case Row::VideoCapture:
                 m_values.video_capture = !m_values.video_capture;
                 break;
+            case Row::NativeGame:
+                switch (m_values.native_game_mode) {
+                    case ForwarderNativeGameMode::Automatic: m_values.native_game_mode = ForwarderNativeGameMode::Enabled; break;
+                    case ForwarderNativeGameMode::Enabled: m_values.native_game_mode = ForwarderNativeGameMode::Disabled; break;
+                    case ForwarderNativeGameMode::Disabled: m_values.native_game_mode = ForwarderNativeGameMode::Automatic; break;
+                }
+                break;
             case Row::SvcDebug:
                 switch (m_values.svc_debug_mode) {
                     case ForwarderSvcDebugMode::Automatic: m_values.svc_debug_mode = ForwarderSvcDebugMode::Enabled; break;
@@ -415,6 +424,7 @@ private:
             case Row::CpuCores: return "CPU Cores"_i18n;
             case Row::Screenshot: return "Screenshots"_i18n;
             case Row::VideoCapture: return "Video Capture"_i18n;
+            case Row::NativeGame: return "Native Game (FPSLocker)"_i18n;
             case Row::SvcDebug: return "svcDebug Mode"_i18n;
             case Row::Create: return {};
         }
@@ -437,6 +447,13 @@ private:
             case Row::CpuCores: return m_values.core_mode == CpuCoreMode::Three ? "3 (Default)"_i18n : "4 (Advanced)"_i18n;
             case Row::Screenshot: return m_values.screenshot ? "Enabled"_i18n : "Disabled"_i18n;
             case Row::VideoCapture: return m_values.video_capture ? "Enabled"_i18n : "Disabled"_i18n;
+            case Row::NativeGame:
+                switch (m_values.native_game_mode) {
+                    case ForwarderNativeGameMode::Automatic: return "Automatic (Default)"_i18n;
+                    case ForwarderNativeGameMode::Enabled: return "Enabled"_i18n;
+                    case ForwarderNativeGameMode::Disabled: return "Disabled"_i18n;
+                }
+                break;
             case Row::SvcDebug:
                 switch (m_values.svc_debug_mode) {
                     case ForwarderSvcDebugMode::Automatic: return "Automatic (Default)"_i18n;

@@ -47,6 +47,8 @@ struct ThreadResultData {
     u64 id{};
     std::vector<u8> icon;
     NacpLanguageEntry lang{};
+    // NacpStruct::supported_language_flag, 0 = unknown.
+    u32 supported_language_flag{};
     NacpLoadStatus status{NacpLoadStatus::None};
 };
 
@@ -66,6 +68,11 @@ void PushAsync(const std::span<const NsApplicationRecord> app_ids);
 auto GetAsync(u64 app_id) -> ThreadResultData*;
 // single threaded title info fetch.
 auto Get(u64 app_id, bool* cached = nullptr) -> ThreadResultData*;
+
+// returns NacpStruct::supported_language_flag for app_id.
+// uses the cached thread result if available, otherwise parses the control
+// nacp directly. 0 = unknown.
+Result GetSupportedLanguageFlag(u64 app_id, u32* out);
 
 auto GetNcmCs(u8 storage_id) -> NcmContentStorage&;
 auto GetNcmDb(u8 storage_id) -> NcmContentMetaDatabase&;

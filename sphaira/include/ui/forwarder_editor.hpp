@@ -18,6 +18,7 @@ struct Values {
     CpuCoreMode core_mode{CpuCoreMode::Three};
     bool screenshot{true};
     bool video_capture{true};
+    ForwarderNativeGameMode native_game_mode{ForwarderNativeGameMode::Automatic};
     ForwarderSvcDebugMode svc_debug_mode{ForwarderSvcDebugMode::Automatic};
 };
 

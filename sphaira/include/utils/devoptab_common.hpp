@@ -201,6 +201,9 @@ struct MountCurlDevice : MountDevice {
     static size_t read_data_callback(char *ptr, size_t size, size_t nmemb, void *userdata);
     static std::string html_decode(const std::string_view& str);
     static std::string url_decode(const std::string& str);
+    // builds the path as it appears on the server, including the base path
+    // from the mount url (eg, /base/dir). use build_url() to get a full url.
+    std::string build_path(const std::string& path, bool is_dir) const;
     std::string build_url(const std::string& path, bool is_dir);
 
 protected:
