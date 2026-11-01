@@ -4,6 +4,7 @@
 #include "ui/popup_list.hpp"
 #include "ui/option_box.hpp"
 #include "ui/progress_box.hpp"
+#include "ui/install_queue.hpp"
 #include "ui/error_box.hpp"
 #include "ui/scrollable_text.hpp"
 #include "ui/nvg_util.hpp"
@@ -190,9 +191,9 @@ auto ParseLanguageHeading(std::string_view line) -> std::optional<std::string> {
     }
 
     auto code = Lower(Trim(line));
-    static constexpr std::array<std::string_view, 15> languages{
+    static constexpr std::array<std::string_view, 16> languages{
         "en", "ja", "fr", "de", "it", "es", "zh-cn", "ko", "nl",
-        "pt", "ru", "zh-tw", "se", "vi", "uk",
+        "pt", "ru", "zh-tw", "se", "vi", "uk", "tr",
     };
     if (std::ranges::find(languages, code) == languages.end()) {
         return {};
@@ -557,7 +558,19 @@ MainMenu::MainMenu() {
     CheckForUpdates(false);
 
     this->SetActions(
-        std::make_pair(Button::START, Action{App::Exit}),
+        std::make_pair(Button::START, Action{[](){
+            // leaving mid install can leave half installed content behind.
+            if (!InstallQueue::Get().IsBusy()) {
+                App::Exit();
+                return;
+            }
+
+            App::Push<OptionBox>("Installs are still running. Exit anyway?"_i18n, "No"_i18n, "Yes"_i18n, 0, [](auto op_index){
+                if (op_index && *op_index) {
+                    App::Exit();
+                }
+            });
+        }}),
         std::make_pair(Button::SELECT, Action{App::DisplayMenuOptions}),
         std::make_pair(Button::Y, Action{"Menu"_i18n, [this](){
             auto options = std::make_unique<Sidebar>("Menu Options"_i18n, "v" APP_DISPLAY_VERSION, Sidebar::Side::LEFT);
@@ -580,6 +593,7 @@ MainMenu::MainMenu() {
             language_items.push_back("Svenska"); // Swedish
             language_items.push_back("Tiếng Việt"); // Vietnamese
             language_items.push_back("Українська"); // Ukrainian
+            language_items.push_back("Türkçe"); // Turkish
 
             // build menus info.
             std::string menus_info = "Launch one of Sphaira's menus:\n"_i18n;

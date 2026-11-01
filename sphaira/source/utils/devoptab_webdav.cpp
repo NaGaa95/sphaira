@@ -86,6 +86,43 @@ size_t dummy_data_callback(char *ptr, size_t size, size_t nmemb, void *userdata)
     return size * nmemb;
 }
 
+// normalises a path returned by the server so that it can be compared against
+// the path that we requested. servers may return a full url, the base path of
+// the mount may result in duplicate slashes and folders have a trailing slash,
+// so all of those are handled here.
+std::string normalize_url_path(std::string_view str) {
+    // strip the scheme and host from absolute urls.
+    // eg, https://example.com/base/dir/ -> /base/dir/
+    if (const auto scheme = str.find("://"); scheme != std::string_view::npos) {
+        const auto path = str.find('/', scheme + 3);
+        str = path != std::string_view::npos ? str.substr(path) : std::string_view{"/"};
+    }
+
+    std::string out{};
+    out.reserve(str.size());
+
+    for (const auto c : str) {
+        // skip duplicate slashes.
+        if (c == '/' && !out.empty() && out.back() == '/') {
+            continue;
+        }
+
+        out += c;
+    }
+
+    // ignore the trailing slash.
+    if (out.size() > 1 && out.back() == '/') {
+        out.pop_back();
+    }
+
+    // treat the root as empty.
+    if (out == "/") {
+        out.clear();
+    }
+
+    return out;
+}
+
 std::pair<bool, long> Device::webdav_custom_command(const std::string& path, const std::string& cmd, std::string_view postfields, std::span<const std::string> headers, bool is_dir, std::vector<char>* response_data) {
     const auto url = build_url(path, is_dir);
 
@@ -170,10 +207,12 @@ int Device::webdav_dirlist(const std::string& path, DirEntries& out) {
 
     log_write("\n[WEBDAV] XML parsed successfully\n");
 
-    auto requested_path = url_decode(path);
-    if (!requested_path.empty() && requested_path.back() == '/') {
-        requested_path.pop_back();
-    }
+    // the hrefs returned by the server include the base path from the mount
+    // url, eg, mounting https://example.com/base returns hrefs of /base/ and
+    // /base/file, whereas the path passed to us is just / and /file.
+    // so build the path that the server will return and compare against that,
+    // otherwise the directory itself is listed as a child of itself.
+    const auto requested_path = normalize_url_path(build_path(path, true));
 
     const auto responses = doc.select_nodes(XPATH_RESPONSE);
 
@@ -188,9 +227,8 @@ int Device::webdav_dirlist(const std::string& path, DirEntries& out) {
             continue;
         }
 
-        // todo: fix requested path still being displayed.
         const auto href = url_decode(href_x.node().text().as_string());
-        if (href.empty() || href == requested_path || href == requested_path + '/') {
+        if (href.empty() || normalize_url_path(href) == requested_path) {
             continue;
         }
 

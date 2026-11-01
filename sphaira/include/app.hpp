@@ -61,6 +61,10 @@ public:
     // pops all widgets above a menu
     static void PopToMenu();
 
+    // takes a widget off the stack without destroying it, null if it isn't there.
+    // must not be called from within a widget's update.
+    static auto Detach(const ui::Widget* widget) -> std::unique_ptr<ui::Widget>;
+
     // this is thread safe
     static void Notify(const std::string& text, ui::NotifEntry::Side side = ui::NotifEntry::Side::RIGHT);
     static void Notify(ui::NotifEntry entry);
@@ -70,6 +74,8 @@ public:
 
     // if R_FAILED(rc), pushes error box. returns rc passed in.
     static Result PushErrorBox(Result rc, const std::string& message);
+    // same, with extra detail shown under the message, such as the path that failed.
+    static Result PushErrorBox(Result rc, const std::string& message, const std::string& detail);
 
     static auto GetThemeMetaList() -> std::span<ThemeMeta>;
     static void SetTheme(s64 theme_index);

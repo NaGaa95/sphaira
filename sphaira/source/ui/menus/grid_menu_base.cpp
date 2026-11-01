@@ -6,8 +6,8 @@
 
 namespace sphaira::ui::menu::grid {
 
-void Menu::DrawEntry(NVGcontext* vg, Theme* theme, int layout, const Vec4& v, bool selected, int image, const char* name, const char* author, const char* version) {
-    DrawEntry(vg, theme, true, layout, v, selected, image, name, author, version);
+Vec4 Menu::DrawEntry(NVGcontext* vg, Theme* theme, int layout, const Vec4& v, bool selected, int image, const char* name, const char* author, const char* version) {
+    return DrawEntry(vg, theme, true, layout, v, selected, image, name, author, version);
 }
 
 Vec4 Menu::DrawEntryNoImage(NVGcontext* vg, Theme* theme, int layout, const Vec4& v, bool selected, const char* name, const char* author, const char* version) {

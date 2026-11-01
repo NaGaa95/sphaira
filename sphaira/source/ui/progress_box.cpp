@@ -50,10 +50,7 @@ ProgressBox::ProgressBox(int image, const std::string& action, const std::string
         }});
     }
 
-    m_pos.w = 770.f;
-    m_pos.h = m_screen_toggle_enabled ? 355.f : 295.f;
-    m_pos.x = (SCREEN_WIDTH / 2.f) - (m_pos.w / 2.f);
-    m_pos.y = (SCREEN_HEIGHT / 2.f) - (m_pos.h / 2.f);
+    SetupPosition();
 
     // create cancel event.
     ueventCreate(&m_uevent, false);
@@ -92,10 +89,45 @@ ProgressBox::~ProgressBox() {
     App::SetAutoSleepDisabled(false);
 }
 
+void ProgressBox::SetupPosition() {
+    m_pos.w = 770.f;
+    m_pos.h = HasFooter() ? 355.f : 295.f;
+    m_pos.x = (SCREEN_WIDTH / 2.f) - (m_pos.w / 2.f);
+    m_pos.y = (SCREEN_HEIGHT / 2.f) - (m_pos.h / 2.f);
+}
+
+auto ProgressBox::HasFooter() const -> bool {
+    return m_screen_toggle_enabled || m_hideable;
+}
+
+void ProgressBox::SetHideAction(const std::function<void()>& on_hide) {
+    m_hideable = true;
+    SetupPosition();
+
+    SetAction(Button::B, Action{[on_hide](){
+        on_hide();
+    }});
+
+    SetAction(Button::X, Action{[this](){
+        App::Push<OptionBox>("Are you sure you wish to cancel?"_i18n, "No"_i18n, "Yes"_i18n, 1, [this](auto op_index){
+            if (op_index && *op_index) {
+                RequestExit();
+                SetPop();
+            }
+        });
+    }});
+}
+
+void ProgressBox::GetProgress(s64& offset, s64& size) {
+    SCOPED_MUTEX(&m_mutex);
+    offset = m_offset;
+    size = m_size;
+}
+
 auto ProgressBox::Update(Controller* controller, TouchInfo* touch) -> void {
     Widget::Update(controller, touch);
 
-    if (m_screen_toggle_enabled && touch->is_clicked) {
+    if (HasFooter() && touch->is_clicked) {
         for (const auto& button : GetFooterButtons()) {
             if (touch->in_range(button.GetPos())) {
                 FireAction(button.m_button);
@@ -148,7 +180,7 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
     // The pop up shape.
     // const Vec4 box = { 255, 145, 770, 430 };
     const auto center_x = m_pos.x + m_pos.w/2;
-    const auto footer_height = m_screen_toggle_enabled ? 60.f : 0.f;
+    const auto footer_height = HasFooter() ? 60.f : 0.f;
     const auto end_y = m_pos.y + m_pos.h - footer_height;
     const auto progress_bar_w = m_pos.w - 230;
     const Vec4 prog_bar = { center_x - progress_bar_w / 2, end_y - 95, progress_bar_w, 12 };
@@ -212,7 +244,7 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
 
     nvgRestore(vg);
 
-    if (m_screen_toggle_enabled) {
+    if (HasFooter()) {
         gfx::drawRect(vg, m_pos.x, end_y, m_pos.w, 2.f, theme->GetColour(ThemeEntryID_LINE_SEPARATOR));
         for (auto& button : GetFooterButtons()) {
             button.Draw(vg, theme);
@@ -239,8 +271,16 @@ auto ProgressBox::GetFooterButtons() const -> Widget::uiButtons {
         buttons.emplace_back(std::move(item));
     };
 
-    add_button(Button::Y, "Screen Off"_i18n, m_pos.x + m_pos.w * 0.25f);
-    add_button(Button::B, "Back"_i18n, m_pos.x + m_pos.w * 0.75f);
+    if (m_hideable) {
+        if (m_screen_toggle_enabled) {
+            add_button(Button::Y, "Screen Off"_i18n, m_pos.x + m_pos.w * (1.f / 6.f));
+        }
+        add_button(Button::X, "Cancel"_i18n, m_pos.x + m_pos.w * (m_screen_toggle_enabled ? 0.5f : 0.25f));
+        add_button(Button::B, "Background"_i18n, m_pos.x + m_pos.w * (m_screen_toggle_enabled ? (5.f / 6.f) : 0.75f));
+    } else {
+        add_button(Button::Y, "Screen Off"_i18n, m_pos.x + m_pos.w * 0.25f);
+        add_button(Button::B, "Back"_i18n, m_pos.x + m_pos.w * 0.75f);
+    }
     return buttons;
 }
 

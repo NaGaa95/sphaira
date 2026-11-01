@@ -4,6 +4,7 @@
 #include "ui/sidebar.hpp"
 #include "ui/popup_multi_select.hpp"
 #include "ui/progress_box.hpp"
+#include "ui/install_queue.hpp"
 #include "yati/yati.hpp"
 #include "yati/source/http.hpp"
 
@@ -281,7 +282,8 @@ TitleMenu::TitleMenu(const sphaira::ownfoil::Config& config, const std::string& 
 : MenuBase{config.name, MenuFlag_None}
 , m_config{config}
 , m_base_url{base_url}
-, m_page{page} {
+, m_page{page}
+, m_queue_finished{InstallQueue::Get().GetFinishedCounter()} {
     // the heading row names the shop, as the catalog's does. the title's own
     // name heads the right column instead: a long one scrolled in the heading.
     SetAction(Button::B, Action{"Back"_i18n, [this]{
@@ -465,6 +467,15 @@ void TitleMenu::Update(Controller* controller, TouchInfo* touch) {
 
         log_write("[OWNFOIL] page for %s shown after %zums%s\n", m_page.id.c_str(), m_opened.GetMs(), ready ? "" : " (waited out)");
         SetHidden(false);
+    }
+
+    // an install finished, maybe this title's, maybe queued from another page.
+    if (const auto finished = InstallQueue::Get().GetFinishedCounter(); finished != m_queue_finished) {
+        m_queue_finished = finished;
+        const auto token = m_stop.get_token();
+        m_console = std::make_unique<utils::Async>([this, token](){
+            LoadInstalled(token);
+        });
     }
 
     MenuBase::Update(controller, touch);
@@ -1021,8 +1032,11 @@ void TitleMenu::Install() {
         return;
     }
 
+    // the queue reports and refreshes this page itself: the install can outlive
+    // the page, so nothing here may be captured by it. a running install is
+    // either on screen or off the stack, so only the install menu is closed.
     App::PopToMenu();
-    App::Push<ProgressBox>(0, "Installing "_i18n, GetName(), [config = m_config, targets](ProgressBox* pbox) -> Result {
+    InstallQueue::Get().Add(GetName(), 0, [config = m_config, targets](ProgressBox* pbox) -> Result {
         for (const auto& target : targets) {
             yati::source::Http source{target.download.url, config.user, config.pass, pbox->GetToken()};
 
@@ -1035,17 +1049,7 @@ void TitleMenu::Install() {
         }
 
         R_SUCCEED();
-    }, [this](Result rc) {
-        App::PushErrorBox(rc, "Install failed!"_i18n);
-        if (R_SUCCEEDED(rc)) {
-            App::Notify(i18n::Reorder("Installed ", GetName()));
-        }
-
-        const auto token = m_stop.get_token();
-        m_console = std::make_unique<utils::Async>([this, token](){
-            LoadInstalled(token);
-        });
-    }, ProgressBoxOption::ScreenToggle);
+    });
 }
 
 void TitleMenu::ShowAddons(const std::function<void()>& changed) {

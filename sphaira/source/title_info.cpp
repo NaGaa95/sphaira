@@ -390,6 +390,7 @@ auto ThreadData::Get(u64 app_id, bool* cached) -> ThreadResultData* {
             FakeNacpEntry(result.get());
         } else {
             NormalizeNacpLangData(control->nacp);
+            result->supported_language_flag = control->nacp.supported_language_flag;
 
             bool valid = true;
             NacpLanguageEntry* lang;
@@ -568,6 +569,20 @@ auto Get(u64 app_id, bool* cached) -> ThreadResultData* {
         return g_thread_data->Get(app_id, cached);
     }
     return {};
+}
+
+Result GetSupportedLanguageFlag(u64 app_id, u32* out) {
+    // fast path: already loaded by the title thread.
+    if (auto data = GetAsync(app_id); data && data->status == NacpLoadStatus::Loaded) {
+        *out = data->supported_language_flag;
+        R_SUCCEED();
+    }
+
+    // slow path: parse the control nacp directly.
+    NacpStruct nacp{};
+    R_TRY(LoadControlNacp(app_id, nacp, nullptr));
+    *out = nacp.supported_language_flag;
+    R_SUCCEED();
 }
 
 auto GetNcmCs(u8 storage_id) -> NcmContentStorage& {
