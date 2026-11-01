@@ -61,6 +61,10 @@ public:
     // pops all widgets above a menu
     static void PopToMenu();
 
+    // takes a widget off the stack without destroying it, null if it isn't there.
+    // must not be called from within a widget's update.
+    static auto Detach(const ui::Widget* widget) -> std::unique_ptr<ui::Widget>;
+
     // this is thread safe
     static void Notify(const std::string& text, ui::NotifEntry::Side side = ui::NotifEntry::Side::RIGHT);
     static void Notify(ui::NotifEntry entry);

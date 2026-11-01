@@ -4,6 +4,7 @@
 #include "ui/popup_list.hpp"
 #include "ui/option_box.hpp"
 #include "ui/progress_box.hpp"
+#include "ui/install_queue.hpp"
 #include "ui/error_box.hpp"
 #include "ui/scrollable_text.hpp"
 #include "ui/nvg_util.hpp"
@@ -557,7 +558,19 @@ MainMenu::MainMenu() {
     CheckForUpdates(false);
 
     this->SetActions(
-        std::make_pair(Button::START, Action{App::Exit}),
+        std::make_pair(Button::START, Action{[](){
+            // leaving mid install can leave half installed content behind.
+            if (!InstallQueue::Get().IsBusy()) {
+                App::Exit();
+                return;
+            }
+
+            App::Push<OptionBox>("Installs are still running. Exit anyway?"_i18n, "No"_i18n, "Yes"_i18n, 0, [](auto op_index){
+                if (op_index && *op_index) {
+                    App::Exit();
+                }
+            });
+        }}),
         std::make_pair(Button::SELECT, Action{App::DisplayMenuOptions}),
         std::make_pair(Button::Y, Action{"Menu"_i18n, [this](){
             auto options = std::make_unique<Sidebar>("Menu Options"_i18n, "v" APP_DISPLAY_VERSION, Sidebar::Side::LEFT);

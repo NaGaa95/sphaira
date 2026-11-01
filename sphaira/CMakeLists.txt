@@ -104,6 +104,7 @@ add_executable(sphaira
     source/ui/popup_list.cpp
     source/ui/popup_multi_select.cpp
     source/ui/progress_box.cpp
+    source/ui/install_queue.cpp
     source/ui/scrollable_text.cpp
     source/ui/sidebar.cpp
     source/ui/widget.cpp
