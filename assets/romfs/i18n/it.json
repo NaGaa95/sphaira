@@ -137,19 +137,19 @@
     "Le opzioni di mount richiedono solo la definizione di un URL e un nome, mentre gli altri campi (porta, utente, pass ecc.) sono facoltativi\n",
     "Qualsiasi modifica apportata richiederà il riavvio di Sphaira per avere effetto."
   ],
-  "Boost CPU during transfer": "Potenzia la CPU durante il trasferimento",
+  "Boost CPU during transfer": "Potenzia CPU durante il trasferimento",
   "transfer_boost_info": [
     "Abilita la modalità boost durante i trasferimenti (può migliorare la velocità di trasferimento). ",
     "Imposta la CPU a 1785 MHz e abbassa la GPU a 76 MHz"
   ],
-  "Text scroll speed": "Velocità di scorrimento del testo",
+  "Text scroll speed": "Velocità scorrimento testo",
   "Change how fast the scrolling text updates": "Modifica la velocità con cui si scorre il testo",
-  "Set center menu": "Imposta il menu centrale",
+  "Set center menu": "Menù centrale",
   "Press OK to restart Sphaira": "Premi OK per riavviare Sphaira",
   "Set the menu that appears on the center tab.": "Imposta il menù che appare nella scheda centrale.",
-  "Set left-side menu": "Imposta il menù a sinistra",
+  "Set left-side menu": "Menù a sinistra",
   "Set the menu that appears on the left tab.": "Imposta il menù che appare nella scheda di sinistra.",
-  "Set right-side menu": "Imposta il menù a destra",
+  "Set right-side menu": "Menù a destra",
   "Set the menu that appears on the right tab.": "Imposta il menù che appare nella scheda destra.",
   "Install options": "Opzioni di installazione",
   "install_options_info": [
@@ -256,7 +256,7 @@
   "Export Options": "Opzioni di esportazione",
   "Fix export filenames": "Correggi nomi dei file esportati",
   "fix_export_filenames_info": "Usa il titolo inglese per i file esportati e, se non disponibile, usa l'ID del titolo. Disattiva questa opzione per mantenere i titoli localizzati e in Unicode sulle destinazioni compatibili.",
-  "Created nested folder": "Cartella nidificata creata",
+  "Created nested folder": "Cartella nidificata",
   "game_folder_info": [
     "Crea una cartella utilizzando il nome del gioco.",
     "Ad esempio, /nome/nome.xci",
@@ -290,8 +290,8 @@
   ],
   "NSZ long distance mode": "Modalità a lunga distanza NSZ",
   "Enables \"Long Distance Mode\" which can reduce the output size at the cost of speed.": [
-    "Abilita la \"Modalità a lunga distanza\" che",
-    "può ridurre le dimensioni dell'output a scapito della velocità."
+    "Abilita la \"Modalità a lunga distanza\".",
+    "Può ridurre le dimensioni dell'output a scapito della velocità."
   ],
   "NSZ block compression": "Compressione a blocchi NSZ",
   "block_compress_info": [
@@ -299,7 +299,7 @@
     "Ciò consente l'accesso casuale, permettendo di montare l'NCZ come file system.\n",
     "NOTA: Sphaira non supporta ancora il mount di NCZ come file system, ma verrà eventualmente aggiunto."
   ],
-  "NSZ block size": "Dimensione del blocco NSZ",
+  "NSZ block size": "Dimensione blocco NSZ",
   "Sets the size of each block. The smaller the size, the faster the random access is at the cost of compression ratio.": [
     "Imposta la dimensione di ciascun blocco. Più piccola è la dimensione, più veloce sarà",
     "l'accesso casuale, a scapito del rapporto di compressione."
@@ -506,7 +506,7 @@
   "Removed ": "Rimosso ",
   "Install": "Installa",
   "Update": "Aggiorna",
-  "Launch": "Lancia",
+  "Launch": "Avvia",
   "Remove": "Rimuovi",
   "Completely remove ": "Elimina definitivamente ",
   "AppStore": "App Store",
@@ -916,7 +916,7 @@
   "Failed to load image": "Impossibile caricare l'immagine",
   "Install failed!": "Installazione fallita!",
   "Install success!": "Installazione completata!",
-  "Drag'n'Drop (NSP, XCI, NSZ, XCZ, MSP) to the install folder": "Trascina e rilascia i file (NSP, XCI, NSZ, XCZ, MSP) nella cartella di installazione",
+  "Drag'n'Drop (NSP, XCI, NSZ, XCZ, MSP) to the install folder": "Sposta i file NSP, XCI, NSZ, XCZ, MSP nella cartella di installazione",
   "Failed to install, press B to exit...": "Installazione fallita, premere B per uscire...",
   "Irs": "Sensore a infrarossi",
   "0 (Sideways)": "0 (Orizzontale)",
@@ -1014,16 +1014,16 @@
     "Se Sphaira ha un aggiornamento disponibile, puoi scaricarlo da questo menù"
   ],
   "network_options_info": "Attiva/disattiva FTP, MTP, HDD e NXlink",
-  "Switch Ports": "Porting per Switch",
-  "Downloading Switch Ports catalog": "Download del catalogo dei porting per Switch",
-  "Failed to download Switch Ports catalog": "Impossibile scaricare il catalogo dei porting per Switch",
-  "Resolving port download": "Preparazione del download del porting",
-  "Failed to resolve port download": "Impossibile preparare il download del porting",
-  "Browse ports from this category.": "Esplora i porting di questa categoria.",
+  "Switch Ports": "Port per Switch",
+  "Downloading Switch Ports catalog": "Download del catalogo dei port per Switch",
+  "Failed to download Switch Ports catalog": "Impossibile scaricare il catalogo dei port per Switch",
+  "Resolving port download": "Preparazione del download del port",
+  "Failed to resolve port download": "Impossibile preparare il download del port",
+  "Browse ports from this category.": "Esplora i port di questa categoria.",
   "Install ": "Installa ",
   "Destination: ": "Destinazione: ",
-  "Only the homebrew port is downloaded. Original game data may still be required.": "Viene scaricato solo il porting homebrew. Potrebbero essere comunque necessari i dati del gioco originale.",
-  "No installable ZIP or NRO release asset was found for this port.": "Non è stato trovato alcun file ZIP o NRO installabile per questo porting.",
+  "Only the homebrew port is downloaded. Original game data may still be required.": "Viene scaricato solo il port homebrew. Potrebbero essere comunque necessari i dati del gioco originale.",
+  "No installable ZIP or NRO release asset was found for this port.": "Non è stato trovato alcun file ZIP o NRO installabile per questo port.",
   "This catalog entry does not point to a GitHub release repository.": "Questa voce del catalogo non rimanda a un repository GitHub con release.",
   "No direct GitHub release is available for this entry.\n\n": "Non è disponibile nessuna release GitHub per questa voce.\n\n",
   "No matching release assets were found.": "Non è stato trovato alcun file allegato alla release.",
