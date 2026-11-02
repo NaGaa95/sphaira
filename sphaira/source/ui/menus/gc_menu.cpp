@@ -907,12 +907,16 @@ Result Menu::GcMountStorage() {
     u32 magic;
     u32 trim_size;
     u8 rom_size;
+    u8 header_flags;
     std::memcpy(&magic, header + 0x100, sizeof(magic));
     std::memcpy(&rom_size, header + 0x10D, sizeof(rom_size));
+    std::memcpy(&header_flags, header + 0x10F, sizeof(header_flags));
     std::memcpy(&trim_size, header + 0x118, sizeof(trim_size));
     std::memcpy(&m_package_id, header + 0x110, sizeof(m_package_id));
     std::memcpy(m_initial_data_hash, header + 0x160, sizeof(m_initial_data_hash));
     R_UNLESS(magic == XCI_MAGIC, Result_GcBadXciMagic);
+    m_is_t2 = header_flags & GameCardFlags_CardHeaderSignKey;
+    log_write("[GC] header flags: 0x%X is_t2: %u\n", header_flags, m_is_t2);
 
     // calculate the reported size, error if not found.
     m_storage_full_size = GetXciSizeFromRomSize(rom_size);
@@ -1140,6 +1144,12 @@ Result Menu::DumpGames(u32 flags) {
     // this will fill out the xci header, verify and get sizes.
     R_TRY(GcMountStorage());
 
+    // T2 gamecards don't have an initial data area, so skip it.
+    if (m_is_t2) {
+        flags &= ~DumpFileFlag_Initial;
+        R_UNLESS(flags, Result_GcNoInitialData);
+    }
+
     const auto do_dump = [this](u32 flags) -> Result {
         App::SetBoostMode(true);
         ON_SCOPE_EXIT(App::SetBoostMode(false));
@@ -1184,8 +1194,10 @@ Result Menu::DumpGames(u32 flags) {
         }
 
         if (flags & DumpFileFlag_Cert) {
-            source->cert.resize(sizeof(security_info.certificate));
-            std::memcpy(source->cert.data(), &security_info.certificate, source->cert.size());
+            // the T2 certificate also covers the reserved area after it.
+            source->cert.resize(sizeof(security_info.certificate) + (m_is_t2 ? sizeof(security_info.reserved) : 0));
+            const auto cert = reinterpret_cast<const u8*>(&security_info) + offsetof(GameCardSecurityInformation, certificate);
+            std::memcpy(source->cert.data(), cert, source->cert.size());
             paths.emplace_back(BuildFullDumpPath(DumpFileType_Cert, m_entries));
         }
 
@@ -1246,6 +1258,15 @@ Result Menu::DumpGames(u32 flags) {
 Result Menu::GcGetSecurityInfo(GameCardSecurityInformation& out) {
     R_TRY(GcMountPartition(FsGameCardPartitionRaw_Secure));
 
+    // T2 gamecards have no initial data, so look for the card id values instead,
+    // like nxdumptool does.
+    FsGameCardIdSet id_set{};
+    FsCardId1 id1_mirror{};
+    if (m_is_t2) {
+        R_TRY(fsDeviceOperatorGetGameCardIdSet(&m_dev_op, &id_set, sizeof(id_set), sizeof(id_set)));
+        id1_mirror.memory_type = id_set.id1.memory_type & FsCardId1MemoryType_IsLate;
+    }
+
     constexpr u64 title_id = 0x0100000000000000; // FS
     Handle handle{};
     DebugEventInfo event_info{};
@@ -1285,6 +1306,25 @@ Result Menu::GcGetSecurityInfo(GameCardSecurityInformation& out) {
                 R_TRY(svcReadDebugProcessMemory(data.data(), handle, mem_info.addr, data.size()));
 
                 for (s64 i = 0; i < data.size(); i += 8) {
+                    if (m_is_t2) {
+                        if (i + sizeof(out) > data.size()) {
+                            break;
+                        }
+
+                        const auto info = data.data() + i;
+                        if (!std::memcmp(info + offsetof(GameCardSecurityInformation, specific_data.card_id1), &id_set.id1, sizeof(id_set.id1)) &&
+                            !std::memcmp(info + offsetof(GameCardSecurityInformation, specific_data.card_id2), &id_set.id2, sizeof(id_set.id2)) &&
+                            !std::memcmp(info + offsetof(GameCardSecurityInformation, specific_data.card_uid.card_id_1_mirror), &id1_mirror, sizeof(id1_mirror))) {
+                            addr = mem_info.addr;
+                            log_write("[GC] found the T2 security info\n");
+                            log_write("\taddr: 0x%016lX\n", mem_info.addr);
+                            log_write("\toff: 0x%016lX\n", mem_info.addr + i);
+                            std::memcpy(&out, info, sizeof(out));
+                            R_SUCCEED();
+                        }
+                        continue;
+                    }
+
                     if (i + sizeof(out.initial_data) >= data.size()) {
                         break;
                     }

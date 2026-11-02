@@ -701,6 +701,7 @@ enum class SphairaResult : Result {
     UsbRemoteError,
     GameLangBadIndex,
     SaveInvalidArchiveLayout,
+    GcNoInitialData,
 };
 
 #define MAKE_SPHAIRA_RESULT_ENUM(x) Result_##x =  MAKERESULT(Module_Sphaira, (Result)SphairaResult::x)
@@ -870,6 +871,7 @@ enum : Result {
     MAKE_SPHAIRA_RESULT_ENUM(UsbRemoteError),
     MAKE_SPHAIRA_RESULT_ENUM(GameLangBadIndex),
     MAKE_SPHAIRA_RESULT_ENUM(SaveInvalidArchiveLayout),
+    MAKE_SPHAIRA_RESULT_ENUM(GcNoInitialData),
 };
 
 #undef MAKE_SPHAIRA_RESULT_ENUM
