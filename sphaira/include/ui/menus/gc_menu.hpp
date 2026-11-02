@@ -52,6 +52,16 @@ typedef struct {
 
 static_assert(sizeof(FsCardId1) == 0x4);
 
+enum {
+    FsCardId1MemoryType_IsLate = BIT(5), ///< 0: Fast, 1: Late.
+};
+
+/// Set in the gamecard header flags of T2 gamecards (Switch 2 and Switch 2 Edition).
+/// These have a second header and certificate, but no initial data area.
+enum {
+    GameCardFlags_CardHeaderSignKey = BIT(7),
+};
+
 typedef struct {
     u8 card_security_number;    ///< FsCardId2CardSecurityNumber.
     u8 card_type;               ///< FsCardId2CardType.
@@ -155,6 +165,8 @@ static_assert(sizeof(GameCardSpecificData) == 0x200);
 /// Plaintext area. Dumped from FS program memory.
 /// This struct is returned by Lotus command "ChangeToSecureMode" (0xF). This means it is only available *after* the gamecard secure area has been mounted.
 /// A copy of the gamecard header without the RSA-2048 signature and a plaintext GameCardInfo precedes this struct in FS program memory.
+/// T2 gamecards use a 0x400 byte certificate that also covers the reserved area,
+/// and have unknown data in place of the initial data.
 typedef struct {
     GameCardSpecificData specific_data;
     FsGameCardCertificate certificate;
@@ -273,6 +285,8 @@ private:
     u64 m_package_id{};
     // found in xci header.
     u8 m_initial_data_hash[SHA256_HASH_SIZE]{};
+    // set from the xci header flags, T2 gamecards have no initial data.
+    bool m_is_t2{};
     // currently mounted storage partiton.
     FsGameCardPartitionRaw m_partition{FsGameCardPartitionRaw_None};
     bool m_storage_mounted{};
