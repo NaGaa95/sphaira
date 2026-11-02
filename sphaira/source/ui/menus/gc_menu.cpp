@@ -1268,6 +1268,20 @@ Result Menu::GcGetSecurityInfo(GameCardSecurityInformation& out) {
         id1_mirror.memory_type = id_set.id1.memory_type & FsCardId1MemoryType_IsLate;
     }
 
+    // fs is paused while it's being debugged, so writing to the log file during
+    // the search locks up the console. only log once the debug handle is closed.
+    MemoryInfo found_info{};
+    s64 found_off{-1};
+    ON_SCOPE_EXIT(
+        if (found_off >= 0) {
+            log_write("[GC] found the %s security info\n", m_is_t2 ? "T2" : "T1");
+            log_write("\tperm: 0x%X\n", found_info.perm);
+            log_write("\ttype: 0x%X\n", found_info.type & MemState_Type);
+            log_write("\taddr: 0x%016lX\n", found_info.addr);
+            log_write("\toff: 0x%016lX\n", found_info.addr + found_off);
+        }
+    );
+
     constexpr u64 title_id = 0x0100000000000000; // FS
     Handle handle{};
     DebugEventInfo event_info{};
@@ -1317,9 +1331,8 @@ Result Menu::GcGetSecurityInfo(GameCardSecurityInformation& out) {
                             !std::memcmp(info + offsetof(GameCardSecurityInformation, specific_data.card_id2), &id_set.id2, sizeof(id_set.id2)) &&
                             !std::memcmp(info + offsetof(GameCardSecurityInformation, specific_data.card_uid.card_id_1_mirror), &id1_mirror, sizeof(id1_mirror))) {
                             addr = mem_info.addr;
-                            log_write("[GC] found the T2 security info\n");
-                            log_write("\taddr: 0x%016lX\n", mem_info.addr);
-                            log_write("\toff: 0x%016lX\n", mem_info.addr + i);
+                            found_info = mem_info;
+                            found_off = i;
                             std::memcpy(&out, info, sizeof(out));
                             R_SUCCEED();
                         }
@@ -1331,18 +1344,14 @@ Result Menu::GcGetSecurityInfo(GameCardSecurityInformation& out) {
                     }
 
                     if (!std::memcmp(&package_id, data.data() + i, sizeof(m_package_id))) [[unlikely]] {
-                        log_write("[GC] found the package id\n");
                         u8 hash[SHA256_HASH_SIZE];
                         sha256CalculateHash(hash, data.data() + i, 0x200);
 
                         if (!std::memcmp(hash, m_initial_data_hash, sizeof(hash))) {
                             // successive calls will jump to the addr as the location will not change.
                             addr = mem_info.addr;
-                            log_write("[GC] found the security info\n");
-                            log_write("\tperm: 0x%X\n", mem_info.perm);
-                            log_write("\ttype: 0x%X\n", mem_info.type & MemState_Type);
-                            log_write("\taddr: 0x%016lX\n", mem_info.addr);
-                            log_write("\toff: 0x%016lX\n", mem_info.addr + i);
+                            found_info = mem_info;
+                            found_off = i;
                             std::memcpy(&out, data.data() + i - offsetof(GameCardSecurityInformation, initial_data), sizeof(out));
                             R_SUCCEED();
                         }
