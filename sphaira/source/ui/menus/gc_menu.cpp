@@ -229,13 +229,14 @@ struct XciSource final : dump::BaseSource {
     int icon{};
 
     Result Read(const std::string& path, void* buf, s64 off, s64 size, u64* bytes_read) override {
-        if (off == xci_size) {
-            log_write("[XciSource::Read] read at eof...\n");
-            *bytes_read = 0;
-            R_SUCCEED();
-        }
-
         if (path.ends_with(GetDumpTypeStr(DumpFileType_XCI)) || path.ends_with(GetDumpTypeStr(DumpFileType_XCZ))) {
+            // xci_size is 0 when only the bins are exported, so only check it for the xci.
+            if (off == xci_size) {
+                log_write("[XciSource::Read] read at eof...\n");
+                *bytes_read = 0;
+                R_SUCCEED();
+            }
+
             size = ClipSize(off, size, xci_size);
             *bytes_read = size;
             return menu->GcStorageRead(buf, off, size);
