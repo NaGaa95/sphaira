@@ -394,7 +394,9 @@ auto ThreadData::Get(u64 app_id, bool* cached) -> ThreadResultData* {
 
             bool valid = true;
             NacpLanguageEntry* lang;
-            if (R_SUCCEEDED(nsGetApplicationDesiredLanguage(&control->nacp, &lang)) && lang) {
+            if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &lang)) && lang && lang->name[0]) {
+                result->lang = *lang;
+            } else if (R_SUCCEEDED(nsGetApplicationDesiredLanguage(&control->nacp, &lang)) && lang && lang->name[0]) {
                 result->lang = *lang;
             } else {
                 FakeNacpEntry(result.get());
