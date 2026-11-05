@@ -48,6 +48,9 @@ enum KeyGeneration {
     KeyGeneration_1800    = 0x12,
     KeyGeneration_1900    = 0x13,
     KeyGeneration_2000    = 0x14,
+    KeyGeneration_2100    = 0x15,
+    KeyGeneration_2200    = 0x16,
+    KeyGeneration_2300    = 0x17,
     KeyGeneration_Invalid = 0xFF,
 };
 
