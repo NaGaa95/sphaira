@@ -329,6 +329,7 @@ public:
     option::OptionString m_theme_path{INI_SECTION, "theme", DEFAULT_THEME_PATH};
     option::OptionBool m_theme_music{INI_SECTION, "theme_music", true};
     option::OptionBool m_show_ip_addr{INI_SECTION, "show_ip_addr", true};
+    option::OptionBool m_show_abi_warning{"homebrew", "show_abi_warning", true};
     option::OptionLong m_language{INI_SECTION, "language", 0}; // auto
     option::OptionString m_center_menu{INI_SECTION, "center_side_menu", "Homebrew"};
     option::OptionString m_left_menu{INI_SECTION, "left_side_menu", "FileBrowser"};

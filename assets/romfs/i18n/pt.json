@@ -1333,5 +1333,8 @@
   "Album share PIN": "PIN do compartilhamento do álbum",
   "Serves the album on this port.": "Compartilha o álbum nesta porta.",
   "Browse": "Navegar",
-  "Starts the server and shows the address and the QR code.": "Inicia o servidor e mostra o endereço e o código QR."
+  "Starts the server and shows the address and the QR code.": "Inicia o servidor e mostra o endereço e o código QR.",
+  "Show ABI warning": "Mostrar aviso de ABI",
+  "ABI warning: compatibility issues": "Aviso de ABI: possíveis incompatibilidades",
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "Mostra um aviso para homebrew compilado para uma versão antiga da ABI. Esses aplicativos podem apresentar problemas de compatibilidade."
 }

@@ -1291,5 +1291,8 @@
   "Album share PIN": "アルバム共有のPINコード",
   "Serves the album on this port.": "このポートでアルバムを共有します。",
   "Browse": "見る",
-  "Starts the server and shows the address and the QR code.": "サーバーを起動し、アドレスとQRコードを表示します。"
+  "Starts the server and shows the address and the QR code.": "サーバーを起動し、アドレスとQRコードを表示します。",
+  "Show ABI warning": "ABI警告を表示",
+  "ABI warning: compatibility issues": "ABI警告：互換性の問題",
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "古いABI向けにビルドされた自作ソフトに警告を表示します。これらのアプリでは互換性の問題が発生する可能性があります。"
 }

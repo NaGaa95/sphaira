@@ -43,6 +43,10 @@ struct MenuBase : Widget {
         m_title_sub_heading = sub_heading;
     }
 
+    void SetTitleWarning(const std::string& warning) {
+        m_title_warning = warning;
+    }
+
     void SetSubHeading(const std::string& sub_heading) {
         m_sub_heading = sub_heading;
     }
@@ -60,10 +64,12 @@ struct MenuBase : Widget {
 private:
     std::string m_title{};
     std::string m_title_sub_heading{};
+    std::string m_title_warning{};
     std::string m_sub_heading{};
 
     ScrollingText m_scroll_title{};
     ScrollingText m_scroll_title_sub_heading{};
+    ScrollingText m_scroll_title_warning{};
     ScrollingText m_scroll_sub_heading{};
 
     u32 m_flags{};

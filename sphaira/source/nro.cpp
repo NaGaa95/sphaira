@@ -15,6 +15,27 @@
 namespace sphaira {
 namespace {
 
+auto nro_get_abi_revision(fs::File& file, const NroData& data) -> u32 {
+    struct {
+        u32 magic;
+        u32 revision;
+    } abi{};
+
+    // The LNY2 ABI marker follows the module header, as checked by hbmenu.
+    const u64 offset = u64(data.start.mod_offset) + 0x34;
+    if (offset + sizeof(abi) > data.header.size) {
+        return 0;
+    }
+
+    u64 bytes_read{};
+    if (R_FAILED(file.Read(offset, &abi, sizeof(abi), FsReadOption_None, &bytes_read)) ||
+        bytes_read != sizeof(abi) || abi.magic != 0x32594E4C) {
+        return 0;
+    }
+
+    return abi.revision;
+}
+
 auto nro_parse_internal(fs::Fs* fs, const fs::FsPath& path, NroEntry& entry) -> Result {
     entry.path = path;
 
@@ -32,12 +53,14 @@ auto nro_parse_internal(fs::Fs* fs, const fs::FsPath& path, NroEntry& entry) -> 
     R_TRY(fs->OpenFile(entry.path, FsOpenMode_Read, &f));
 
     // todo: buffer reads to 16k to avoid 2 fs read calls per entry.
-    NroData data;
+    NroData data{};
     u64 bytes_read;
     R_TRY(f.Read(0, &data, sizeof(data), FsReadOption_None, &bytes_read));
+    R_UNLESS(bytes_read == sizeof(data), Result_NroBadSize);
     R_UNLESS(data.header.magic == NROHEADER_MAGIC, Result_NroBadMagic);
+    entry.abi_revision = nro_get_abi_revision(f, data);
 
-    NroAssetHeader asset;
+    NroAssetHeader asset{};
     R_TRY(f.Read(data.header.size, &asset, sizeof(asset), FsReadOption_None, &bytes_read));
     // R_UNLESS(asset.magic == NROASSETHEADER_MAGIC, Result_NroBadMagic);
 

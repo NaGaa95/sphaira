@@ -1280,5 +1280,8 @@
   "Album share PIN": "相簿分享 PIN 碼",
   "Serves the album on this port.": "在此連接埠上分享相簿。",
   "Browse": "瀏覽",
-  "Starts the server and shows the address and the QR code.": "啟動伺服器並顯示位址和 QR 碼。"
+  "Starts the server and shows the address and the QR code.": "啟動伺服器並顯示位址和 QR 碼。",
+  "Show ABI warning": "顯示 ABI 警告",
+  "ABI warning: compatibility issues": "ABI 警告：可能有相容性問題",
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "對以舊版 ABI 編譯的自製軟體顯示警告。這些應用程式可能有相容性問題。"
 }

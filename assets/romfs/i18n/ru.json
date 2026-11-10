@@ -1336,5 +1336,8 @@
   "Album share PIN": "PIN-код для доступа к альбому",
   "Serves the album on this port.": "Открывает доступ к альбому на этом порту.",
   "Browse": "Обзор",
-  "Starts the server and shows the address and the QR code.": "Запускает сервер и показывает адрес и QR-код."
+  "Starts the server and shows the address and the QR code.": "Запускает сервер и показывает адрес и QR-код.",
+  "Show ABI warning": "Показывать предупреждения ABI",
+  "ABI warning: compatibility issues": "ABI: возможны проблемы совместимости",
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "Показывает предупреждение для homebrew-приложений, собранных под старую версию ABI. Возможны проблемы совместимости."
 }

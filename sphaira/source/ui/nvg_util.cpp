@@ -387,6 +387,30 @@ void drawAppLable(NVGcontext* vg, const Theme* theme, ScrollingText& st, float x
     st.Draw(vg, true, text_x, text_y, box_w - text_pad * 2, font_size, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_SELECTED), name);
 }
 
+void drawWarning(NVGcontext* vg, float x, float y, float size) {
+    nvgSave(vg);
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, x + size / 2.f, y);
+    nvgLineTo(vg, x + size, y + size);
+    nvgLineTo(vg, x, y + size);
+    nvgClosePath(vg);
+    nvgFillColor(vg, nvgRGB(255, 196, 0));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 220));
+    nvgStrokeWidth(vg, std::max(1.f, size * 0.06f));
+    nvgLineJoin(vg, NVG_ROUND);
+    nvgStroke(vg);
+
+    const auto black = nvgRGB(0, 0, 0);
+    drawRect(vg, x + size * 0.45f, y + size * 0.34f,
+        size * 0.1f, size * 0.3f, black, size * 0.04f);
+    nvgBeginPath(vg);
+    nvgCircle(vg, x + size / 2.f, y + size * 0.79f, size * 0.06f);
+    nvgFillColor(vg, black);
+    nvgFill(vg);
+    nvgRestore(vg);
+}
+
 void drawCloud(NVGcontext* vg, float cx, float cy, float w, const NVGcolor& c)
 {
     const auto h = w * 0.62f;

@@ -10,6 +10,8 @@
 
 namespace sphaira {
 
+inline constexpr u32 NroAbiCurrentRevision = 1;
+
 struct NroData {
     NroStart start;
     NroHeader header;
@@ -33,6 +35,7 @@ struct NroEntry {
 
     u64 icon_size{};
     u64 icon_offset{};
+    u32 abi_revision{};
 
     FsTimeStampRaw timestamp{};
     Hbini hbini{};
@@ -52,6 +55,10 @@ struct NroEntry {
 
     auto GetDisplayVersion() const -> const char* {
         return nacp.display_version;
+    }
+
+    auto IsAbiOutdated() const -> bool {
+        return abi_revision < NroAbiCurrentRevision;
     }
 };
 

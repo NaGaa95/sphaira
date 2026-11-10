@@ -1388,5 +1388,8 @@
   "No game card was found. Make sure it is inserted correctly.": "Nessuna cartuccia rilevata. Assicurati che sia inserita correttamente.",
   "Failed to paste one or more files": "Impossibile incollare uno o più file",
   "Path: ": "Percorso: ",
-  "The file or folder is in use. Close any running software, turn off FTP / MTP, or restart the console.": "Il file o la cartella è in uso. Chiudi i software in esecuzione, disattiva FTP / MTP oppure riavvia la console."
+  "The file or folder is in use. Close any running software, turn off FTP / MTP, or restart the console.": "Il file o la cartella è in uso. Chiudi i software in esecuzione, disattiva FTP / MTP oppure riavvia la console.",
+  "Show ABI warning": "Mostra avviso ABI",
+  "ABI warning: compatibility issues": "Avviso ABI: possibili incompatibilità",
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "Mostra un avviso per gli homebrew compilati per un'ABI precedente. Queste applicazioni potrebbero avere problemi di compatibilità."
 }

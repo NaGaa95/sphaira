@@ -1333,5 +1333,8 @@
   "Album share PIN": "Pincode voor albumdelen",
   "Serves the album on this port.": "Deelt het album op deze poort.",
   "Browse": "Bladeren",
-  "Starts the server and shows the address and the QR code.": "Start de server en toont het adres en de QR-code."
+  "Starts the server and shows the address and the QR code.": "Start de server en toont het adres en de QR-code.",
+  "Show ABI warning": "ABI-waarschuwing tonen",
+  "ABI warning: compatibility issues": "ABI-waarschuwing: mogelijke compatibiliteitsproblemen",
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "Toont een waarschuwing bij homebrew die voor een oudere ABI is gebouwd. Deze apps kunnen compatibiliteitsproblemen hebben."
 }

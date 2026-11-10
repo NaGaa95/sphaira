@@ -49,6 +49,7 @@ void drawSpinner(NVGcontext* vg, const Theme*, float cx, float cy, float r, floa
 void drawCloud(NVGcontext* vg, float cx, float cy, float w, const NVGcolor& c);
 // a game card centred on cx,cy, h tall.
 void drawGameCard(NVGcontext* vg, float cx, float cy, float h, const NVGcolor& c);
+void drawWarning(NVGcontext* vg, float x, float y, float size);
 
 // draws the code, and the quiet zone around it, as large as it can within
 // max_size. returns the size actually drawn, which is a whole number of

@@ -236,13 +236,16 @@ void Menu::Update(Controller* controller, TouchInfo* touch) {
 }
 
 void Menu::Draw(NVGcontext* vg, Theme* theme) {
+    const auto show_abi_warning = App::GetApp()->m_show_abi_warning.Get();
+    const auto abi_warning = show_abi_warning && !m_entries_current.empty() && GetEntry().IsAbiOutdated();
+    SetTitleWarning(abi_warning ? "ABI warning: compatibility issues"_i18n : "");
     MenuBase::Draw(vg, theme);
 
     // max images per frame, in order to not hit io / gpu too hard.
     const int image_load_max = 2;
     int image_load_count = 0;
 
-    m_list->Draw(vg, theme, m_entries_current.size(), [this, &image_load_count](auto* vg, auto* theme, auto v, auto pos) {
+    m_list->Draw(vg, theme, m_entries_current.size(), [this, &image_load_count, show_abi_warning](auto* vg, auto* theme, auto v, auto pos) {
         const auto index = m_entries_current[pos];
         auto& e = m_entries[index];
 
@@ -287,7 +290,12 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
         const auto selected = pos == m_index;
         const auto image = e.image > 0 || (e.icon_size && e.icon_offset)
             ? e.image : App::GetDefaultImage();
-        DrawEntry(vg, theme, m_layout.Get(), v, selected, image, name.c_str(), e.GetAuthor(), e.GetDisplayVersion());
+        const auto image_v = DrawEntry(vg, theme, m_layout.Get(), v, selected, image, name.c_str(), e.GetAuthor(), e.GetDisplayVersion());
+        if (show_abi_warning && e.IsAbiOutdated()) {
+            const auto size = std::clamp(image_v.w * 0.16f, 20.f, 28.f);
+            gfx::drawWarning(vg, v.x + v.w - size - 6.f,
+                image_v.y + image_v.h - size, size);
+        }
     });
 }
 
@@ -604,6 +612,7 @@ void Menu::FreeEntries() {
 void Menu::OnLayoutChange() {
     m_index = 0;
     grid::Menu::OnLayoutChange(m_list, m_layout.Get());
+    SetIndex(m_index);
 }
 
 Result Menu::InstallHomebrew(const fs::FsPath& path, const std::vector<u8>& icon, ForwarderAddressSpace address_space) {

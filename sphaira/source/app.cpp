@@ -1727,6 +1727,8 @@ App::App(const char* argv0) {
             else if (app->m_convert_to_standard_crypto.LoadFrom(Key, Value)) {}
             else if (app->m_lower_master_key.LoadFrom(Key, Value)) {}
             else if (app->m_lower_system_version.LoadFrom(Key, Value)) {}
+        } else if (!std::strcmp(Section, "homebrew")) {
+            app->m_show_abi_warning.LoadFrom(Key, Value);
         } else if (!std::strcmp(Section, "accessibility")) {
             if (app->m_text_scroll_speed.LoadFrom(Key, Value)) {}
         } else if (!std::strcmp(Section, "dump")) {
@@ -2282,6 +2284,9 @@ void App::DisplayAdvancedOptions(bool left_side) {
     options->Add<ui::SidebarEntryBool>("Logging"_i18n, App::GetLogEnable(), [](bool& enable){
         App::SetLogEnable(enable);
     }, "Logs to /config/sphaira/log.txt"_i18n);
+
+    options->Add<ui::SidebarEntryBool>("Show ABI warning"_i18n, App::GetApp()->m_show_abi_warning,
+        "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues."_i18n);
 
     options->Add<ui::SidebarEntryBool>("Replace hbmenu on exit"_i18n, App::GetReplaceHbmenuEnable(), [](bool& enable){
         App::SetReplaceHbmenuEnable(enable);

@@ -1335,5 +1335,8 @@
   "Album share PIN": "PIN-kod för albumdelning",
   "Serves the album on this port.": "Delar albumet på den här porten.",
   "Browse": "Bläddra",
-  "Starts the server and shows the address and the QR code.": "Startar servern och visar adressen och QR-koden."
+  "Starts the server and shows the address and the QR code.": "Startar servern och visar adressen och QR-koden.",
+  "Show ABI warning": "Visa ABI-varning",
+  "ABI warning: compatibility issues": "ABI-varning: möjliga kompatibilitetsproblem",
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "Visar en varning för homebrew som byggts för en äldre ABI-version. Dessa appar kan ha kompatibilitetsproblem."
 }

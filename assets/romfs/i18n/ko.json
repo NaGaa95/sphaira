@@ -1354,5 +1354,8 @@
   "Album share PIN": "앨범 공유 PIN",
   "Serves the album on this port.": "이 포트로 앨범을 공유합니다.",
   "Browse": "찾아보기",
-  "Starts the server and shows the address and the QR code.": "서버를 시작하고 주소와 QR 코드를 표시합니다."
+  "Starts the server and shows the address and the QR code.": "서버를 시작하고 주소와 QR 코드를 표시합니다.",
+  "Show ABI warning": "ABI 경고 표시",
+  "ABI warning: compatibility issues": "ABI 경고: 호환성 문제",
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "이전 ABI용으로 빌드된 홈브류에 경고를 표시합니다. 호환성 문제가 발생할 수 있습니다."
 }

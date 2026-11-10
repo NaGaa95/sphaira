@@ -1335,5 +1335,8 @@
   "Album share PIN": "Mã PIN chia sẻ album",
   "Serves the album on this port.": "Chia sẻ album trên cổng này.",
   "Browse": "Duyệt",
-  "Starts the server and shows the address and the QR code.": "Khởi động máy chủ và hiển thị địa chỉ cùng mã QR."
+  "Starts the server and shows the address and the QR code.": "Khởi động máy chủ và hiển thị địa chỉ cùng mã QR.",
+  "Show ABI warning": "Hiển thị cảnh báo ABI",
+  "ABI warning: compatibility issues": "Cảnh báo ABI: có thể gặp vấn đề tương thích",
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "Hiển thị cảnh báo cho homebrew được biên dịch cho ABI cũ. Các ứng dụng này có thể gặp vấn đề về tương thích."
 }
