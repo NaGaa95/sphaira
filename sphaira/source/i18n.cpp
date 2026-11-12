@@ -131,6 +131,7 @@ std::string init(long index) {
         case 14: lang_name = "vi"; break; // "Vietnamese"
         case 15: lang_name = "uk"; break; // "Ukrainian"
         case 16: lang_name = "tr"; break; // "Turkish"
+        case 17: lang_name = "hu"; break; // "Magyar"
     }
 
     switch (setLanguage) {
