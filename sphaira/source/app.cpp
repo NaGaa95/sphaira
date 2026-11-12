@@ -1859,7 +1859,16 @@ App::App(const char* argv0) {
             args.X[1] = 0; /* EXO_EMUMMC_MMC_NAND*/
             args.X[2] = (u64)&paths; /* out path */
             svcCallSecureMonitor(&args);
-            m_emummc_paths = paths;
+
+            // exosphere copies the nintendo path for every type, including none,
+            // so only keep the paths if emummc is actually active.
+            // x1 holds the base config: magic (EFS0) in the low and the type in the high 32 bits.
+            const u32 magic = static_cast<u32>(args.X[1]);
+            const u32 type = static_cast<u32>(args.X[1] >> 32);
+            log_write("[emummc] result: 0x%lX magic: 0x%X type: %u\n", args.X[0], magic, type);
+            if (args.X[0] == 0 && magic == 0x30534645 && type != 0) {
+                m_emummc_paths = paths;
+            }
 
             log_write("[emummc] enabled: %u\n", App::IsEmummc());
             if (App::IsEmummc()) {
