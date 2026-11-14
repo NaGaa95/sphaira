@@ -594,6 +594,7 @@ MainMenu::MainMenu() {
             language_items.push_back("Tiếng Việt"); // Vietnamese
             language_items.push_back("Українська"); // Ukrainian
             language_items.push_back("Türkçe"); // Turkish
+			language_items.push_back("Magyar"); // Hungarian
 
             // build menus info.
             std::string menus_info = "Launch one of Sphaira's menus:\n"_i18n;
