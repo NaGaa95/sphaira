@@ -900,7 +900,9 @@ Yati::~Yati() {
 
     // force update the game menu, as we may have installed a game.
     ui::menu::game::SignalChange();
+#ifdef ENABLE_OWNFOIL
     ui::menu::ownfoil::SignalInstalled();
+#endif
 }
 
 Result Yati::Setup(const ConfigOverride& override) {

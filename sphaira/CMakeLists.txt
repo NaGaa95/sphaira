@@ -16,6 +16,7 @@ option(ENABLE_EXT4 "enables EXT2/3/4 hdd mounting, requires switch-lwext4" OFF)
 option(ENABLE_LIBUSBDVD "enables cd/dvd/iso/cue mounting" ON)
 option(ENABLE_FTPSRV "enables MTP server support" ON)
 option(ENABLE_LIBHAZE "enables MTP server support" ON)
+option(ENABLE_OWNFOIL "enables the Ownfoil browser and installer" ON)
 
 # audio options.
 option(ENABLE_AUDIO_MP3 "" ON)
@@ -75,8 +76,6 @@ add_executable(sphaira
     source/ui/menus/album_menu.cpp
     source/ui/menus/album_share_menu.cpp
     source/ui/menus/appstore.cpp
-    source/ui/menus/ownfoil.cpp
-    source/ui/menus/ownfoil_title.cpp
     source/ui/menus/file_viewer.cpp
     source/ui/menus/image_viewer.cpp
     source/ui/menus/filebrowser.cpp
@@ -104,7 +103,6 @@ add_executable(sphaira
     source/ui/popup_list.cpp
     source/ui/popup_multi_select.cpp
     source/ui/progress_box.cpp
-    source/ui/install_queue.cpp
     source/ui/scrollable_text.cpp
     source/ui/sidebar.cpp
     source/ui/widget.cpp
@@ -157,10 +155,6 @@ add_executable(sphaira
     source/utils/devoptab_game.cpp
     source/utils/devoptab_mounts.cpp
     source/utils/devoptab.cpp
-    source/utils/ownfoil.cpp
-    source/utils/ownfoil_discovery.cpp
-    source/utils/ownfoil_api.cpp
-    source/utils/ownfoil_installed.cpp
 
     source/usb/base.cpp
     source/usb/usbds.cpp
@@ -463,6 +457,19 @@ if (ENABLE_LIBHAZE)
     target_sources(sphaira PRIVATE
         source/haze_helper.cpp
         source/ui/menus/mtp_menu.cpp
+    )
+endif()
+
+if (ENABLE_OWNFOIL)
+    target_compile_definitions(sphaira PRIVATE ENABLE_OWNFOIL)
+    target_sources(sphaira PRIVATE
+        source/ui/install_queue.cpp
+        source/ui/menus/ownfoil.cpp
+        source/ui/menus/ownfoil_title.cpp
+        source/utils/ownfoil.cpp
+        source/utils/ownfoil_discovery.cpp
+        source/utils/ownfoil_api.cpp
+        source/utils/ownfoil_installed.cpp
     )
 endif()
 

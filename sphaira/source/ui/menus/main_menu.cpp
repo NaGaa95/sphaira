@@ -341,9 +341,11 @@ const MiscMenuEntry MISC_MENU_ENTRIES[] = {
         "Download releases directly from GitHub. "
         "Custom entries can be added to /config/sphaira/github" },
 
+#ifdef ENABLE_OWNFOIL
     { .name = "Ownfoil", .title = "Ownfoil", .func = MiscMenuFuncGenerator<ui::menu::ownfoil::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
         "Browse and install titles from a self-hosted Ownfoil server.\n\n"
         "Internet connection required." },
+#endif // ENABLE_OWNFOIL
 
 #ifdef ENABLE_FTPSRV
     { .name = "FTP", .title = "FTP Install", .func = MiscMenuFuncGenerator<ui::menu::ftp::Menu>, .flag = MiscMenuFlag_Install, .info =
@@ -559,6 +561,7 @@ MainMenu::MainMenu() {
 
     this->SetActions(
         std::make_pair(Button::START, Action{[](){
+#ifdef ENABLE_OWNFOIL
             // leaving mid install can leave half installed content behind.
             if (!InstallQueue::Get().IsBusy()) {
                 App::Exit();
@@ -570,6 +573,9 @@ MainMenu::MainMenu() {
                     App::Exit();
                 }
             });
+#else
+            App::Exit();
+#endif
         }}),
         std::make_pair(Button::SELECT, Action{App::DisplayMenuOptions}),
         std::make_pair(Button::Y, Action{"Menu"_i18n, [this](){
