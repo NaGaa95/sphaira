@@ -45,14 +45,24 @@ struct TypeEntry {
 };
 
 const TypeEntry TYPE_ENTRIES[] = {
+#ifdef ENABLE_DEVOPTAB_HTTP
     {"HTTP", "http://", 80, DevoptabType::HTTP},
+#endif
+#ifdef ENABLE_DEVOPTAB_FTP
     {"FTP", "ftp://", 21, DevoptabType::FTP},
+#endif
 #ifdef ENABLE_DEVOPTAB_SFTP
     {"SFTP", "sftp://", 22, DevoptabType::SFTP},
 #endif
+#ifdef ENABLE_DEVOPTAB_NFS
     {"NFS", "nfs://", 2049, DevoptabType::NFS},
+#endif
+#ifdef ENABLE_DEVOPTAB_SMB2
     {"SMB", "smb://", 445, DevoptabType::SMB},
+#endif
+#ifdef ENABLE_DEVOPTAB_WEBDAV
     {"WEBDAV", "webdav://", 80, DevoptabType::WEBDAV},
+#endif
 };
 
 struct TypeConfig {
