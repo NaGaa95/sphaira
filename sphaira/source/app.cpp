@@ -1306,7 +1306,9 @@ void App::Update() {
         m_widgets.back()->OnFocusGained();
     }
 
+#ifdef ENABLE_OWNFOIL
     ui::InstallQueue::Get().Update();
+#endif
 }
 
 void App::Draw() {
@@ -1342,7 +1344,9 @@ void App::Draw() {
         }
     }
 
+#ifdef ENABLE_OWNFOIL
     ui::InstallQueue::Get().Draw(vg, &m_theme);
+#endif
     m_notif_manager.Draw(vg, &m_theme);
 
     nvgResetTransform(vg);
@@ -2916,10 +2920,12 @@ App::~App() {
         appletUnhook(&m_appletHookCookie);
 
         // stop a background install before the services it uses go away.
+#ifdef ENABLE_OWNFOIL
         {
             SCOPED_TIMESTAMP("install queue exit");
             ui::InstallQueue::Get().Shutdown();
         }
+#endif
 
         // async exit as these threads sleep every 100ms.
         {

@@ -341,9 +341,11 @@ const MiscMenuEntry MISC_MENU_ENTRIES[] = {
         "Download releases directly from GitHub. "
         "Custom entries can be added to /config/sphaira/github" },
 
+#ifdef ENABLE_OWNFOIL
     { .name = "Ownfoil", .title = "Ownfoil", .func = MiscMenuFuncGenerator<ui::menu::ownfoil::Menu>, .flag = MiscMenuFlag_Shortcut, .info =
         "Browse and install titles from a self-hosted Ownfoil server.\n\n"
         "Internet connection required." },
+#endif // ENABLE_OWNFOIL
 
 #ifdef ENABLE_FTPSRV
     { .name = "FTP", .title = "FTP Install", .func = MiscMenuFuncGenerator<ui::menu::ftp::Menu>, .flag = MiscMenuFlag_Install, .info =
@@ -559,6 +561,7 @@ MainMenu::MainMenu() {
 
     this->SetActions(
         std::make_pair(Button::START, Action{[](){
+#ifdef ENABLE_OWNFOIL
             // leaving mid install can leave half installed content behind.
             if (!InstallQueue::Get().IsBusy()) {
                 App::Exit();
@@ -570,6 +573,9 @@ MainMenu::MainMenu() {
                     App::Exit();
                 }
             });
+#else
+            App::Exit();
+#endif
         }}),
         std::make_pair(Button::SELECT, Action{App::DisplayMenuOptions}),
         std::make_pair(Button::Y, Action{"Menu"_i18n, [this](){
@@ -617,21 +623,27 @@ MainMenu::MainMenu() {
                 auto options = std::make_unique<Sidebar>("Network Options"_i18n, Sidebar::Side::LEFT);
                 ON_SCOPE_EXIT(App::Push(std::move(options)));
 
+#ifdef ENABLE_FTPSRV
                 options->Add<SidebarEntryCallback>("FTP"_i18n, [](){ App::DisplayFtpOptions(); },
                     i18n::get("ftp_settings_info",
                         "Enable / modify the FTP server settings such as port, user/pass and the folders that are shown.\n\n"
                         "NOTE: Changing any of the options will automatically restart the FTP server when exiting the options menu.")
                 );
+#endif // ENABLE_FTPSRV
 
+#ifdef ENABLE_LIBHAZE
                 options->Add<SidebarEntryCallback>("MTP"_i18n, [](){ App::DisplayMtpOptions(); },
                     i18n::get("mtp_settings_info",
                         "Enable / modify the MTP responder settings such as the folders that are shown.\n\n"
                         "NOTE: Changing any of the options will automatically restart the MTP server when exiting the options menu.")
                 );
+#endif // ENABLE_LIBHAZE
 
+#ifdef ENABLE_LIBUSBHSFS
                 options->Add<SidebarEntryCallback>("HDD"_i18n, [](){
                     App::DisplayHddOptions();
                 },  "Enable / modify the HDD mount options."_i18n);
+#endif // ENABLE_LIBUSBHSFS
 
                 options->Add<SidebarEntryBool>("NXlink"_i18n, App::GetNxlinkEnable(), [](bool& enable){
                     App::SetNxlinkEnable(enable);

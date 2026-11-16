@@ -38,6 +38,7 @@
                 "ENABLE_LIBUSBDVD": false,
                 "ENABLE_FTPSRV": false,
                 "ENABLE_LIBHAZE": false,
+                "ENABLE_OWNFOIL": false,
 
                 "ENABLE_AUDIO_MP3": false,
                 "ENABLE_AUDIO_OGG": false,
