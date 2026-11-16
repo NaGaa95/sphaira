@@ -399,6 +399,17 @@ auto ThreadData::Get(u64 app_id, bool* cached) -> ThreadResultData* {
             FakeNacpEntry(result.get());
         } else {
             NormalizeNacpLangData(control->nacp);
+
+            enum NacpLanguage {
+                NacpLang_TraditionalChinese = 13,
+                NacpLang_SimplifiedChinese = 14,
+            };
+            auto entries = NacpLanguageEntries(control->nacp);
+            if (entries[NacpLang_TraditionalChinese].name[0] && !entries[NacpLang_SimplifiedChinese].name[0]) {
+                std::memcpy(&entries[NacpLang_SimplifiedChinese], &entries[NacpLang_TraditionalChinese], sizeof(NacpLanguageEntry));
+                control->nacp.supported_language_flag |= BIT(NacpLang_SimplifiedChinese);
+            }
+
             result->supported_language_flag = control->nacp.supported_language_flag;
 
             bool valid = true;
