@@ -3,6 +3,7 @@
 #include "app.hpp"
 #include "log.hpp"
 #include "owo.hpp"
+#include "platform.hpp"
 #include "ui/menus/main_menu.hpp"
 #include "utils/core.hpp"
 
@@ -68,9 +69,11 @@ void userAppInit(void) {
         diagAbortWithResult(rc);
     if (R_FAILED(rc = setInitialize()))
         diagAbortWithResult(rc);
-    if (R_FAILED(rc = hidsysInitialize()))
+
+    // optional on Switch 2, what uses them handles the failure.
+    if (R_FAILED(rc = hidsysInitialize()) && !sphaira::platform::IsSwitch2)
         diagAbortWithResult(rc);
-    if (R_FAILED(rc = ncmInitialize()))
+    if (R_FAILED(rc = ncmInitialize()) && !sphaira::platform::IsSwitch2)
         diagAbortWithResult(rc);
 
     // it doesn't matter if this fails.

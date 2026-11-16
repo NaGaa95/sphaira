@@ -287,7 +287,7 @@ void LaunchEntry(const Entry& e) {
 Result CreateSave(u64 app_id, AccountUid uid) {
     u64 actual_size;
     auto data = std::make_unique<NsApplicationControlData>();
-    R_TRY(nsGetApplicationControlData(NsApplicationControlSource_Storage, app_id, data.get(), sizeof(NsApplicationControlData), &actual_size));
+    R_TRY(ns::GetApplicationControlData(NsApplicationControlSource_Storage, app_id, data.get(), &actual_size));
 
     FsSaveDataAttribute attr{};
     attr.application_id = app_id;

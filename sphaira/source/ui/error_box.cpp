@@ -191,6 +191,7 @@ auto GetCodeMessage(Result rc) -> const char* {
         case Result_UsbRemoteError: return "SphairaError_UsbRemoteError";
         case Result_SaveInvalidArchiveLayout: return "SphairaError_SaveInvalidArchiveLayout";
         case Result_GcNoInitialData: return "SphairaError_GcNoInitialData";
+        case Result_PlatformUnsupported: return "SphairaError_PlatformUnsupported";
     }
 
     return "";

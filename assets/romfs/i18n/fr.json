@@ -1347,5 +1347,6 @@
   "Starts the server and shows the address and the QR code.": "Démarre le serveur et affiche l'adresse et le QR code.",
   "Show ABI warning": "Afficher l'avertissement ABI",
   "ABI warning: compatibility issues": "Avertissement ABI : incompatibilités possibles",
-  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "Affiche un avertissement pour les homebrews compilés pour une ancienne ABI. Ces applications peuvent présenter des problèmes de compatibilité."
+  "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues.": "Affiche un avertissement pour les homebrews compilés pour une ancienne ABI. Ces applications peuvent présenter des problèmes de compatibilité.",
+  "Installing is not supported on Switch 2": "L'installation n'est pas prise en charge sur Switch 2"
 }

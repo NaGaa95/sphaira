@@ -455,7 +455,9 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
 
         const auto selected = pos == m_index;
         if (m_data_type != FsSaveDataType_System && m_data_type != FsSaveDataType_SystemBcat) {
-            DrawEntry(vg, theme, m_layout.Get(), v, selected, e.image, e.GetName(), e.GetAuthor(), "");
+            // no icon is coming for a title that failed to load.
+            const auto image = e.image > 0 || e.status != title::NacpLoadStatus::Error ? e.image : App::GetDefaultImage();
+            DrawEntry(vg, theme, m_layout.Get(), v, selected, image, e.GetName(), e.GetAuthor(), "");
         } else {
             const auto image_vec = DrawEntryNoImage(vg, theme, m_layout.Get(), v, selected, e.GetName(), e.GetAuthor(), "");
             gfx::drawRect(vg, v, theme->GetColour(ThemeEntryID_GRID), 5);

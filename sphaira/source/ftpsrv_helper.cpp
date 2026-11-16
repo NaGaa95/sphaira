@@ -623,25 +623,26 @@ bool Init() {
     std::strncpy(g_ftpsrv_config.pass, app->m_ftp_pass.Get().c_str(), sizeof(g_ftpsrv_config.pass) - 1);
     g_ftpsrv_config.port = app->m_ftp_port.Get();
 
-    if (app->m_ftp_show_album.Get()) {
+    // a config from the other console can have options set that are hidden here.
+    if (platform::SupportsFtpSystemMounts && app->m_ftp_show_album.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_ALBUM;
     }
-    if (app->m_ftp_show_ams_contents.Get()) {
+    if (platform::HasAtmosphere && app->m_ftp_show_ams_contents.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_AMS_CONTENTS;
     }
-    if (app->m_ftp_show_bis_storage.Get()) {
+    if (platform::SupportsNandAccess && app->m_ftp_show_bis_storage.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_BIS_STORAGE;
     }
-    if (app->m_ftp_show_bis_fs.Get()) {
+    if (platform::SupportsNandAccess && app->m_ftp_show_bis_fs.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_BIS_FS;
     }
-    if (app->m_ftp_show_content_system.Get()) {
+    if (platform::SupportsFtpSystemMounts && app->m_ftp_show_content_system.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_CONTENT_SYSTEM;
     }
-    if (app->m_ftp_show_content_user.Get()) {
+    if (platform::SupportsFtpSystemMounts && app->m_ftp_show_content_user.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_CONTENT_USER;
     }
-    if (app->m_ftp_show_content_sd.Get()) {
+    if (platform::SupportsFtpSystemMounts && app->m_ftp_show_content_sd.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_CONTENT_SDCARD;
     }
     #if 0
@@ -659,7 +660,7 @@ bool Init() {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_SWITCH;
     }
 
-    if (app->m_ftp_show_install.Get()) {
+    if (platform::SupportsInstall && app->m_ftp_show_install.Get()) {
         g_custom_vfs.push_back({
             .name = "install",
             .user = &g_shared_data,
@@ -667,7 +668,7 @@ bool Init() {
         });
     }
 
-    if (app->m_ftp_show_games.Get()) {
+    if (platform::SupportsGames && app->m_ftp_show_games.Get()) {
         g_custom_vfs.push_back({
             .name = "games",
             .user = NULL,

@@ -702,6 +702,8 @@ enum class SphairaResult : Result {
     GameLangBadIndex,
     SaveInvalidArchiveLayout,
     GcNoInitialData,
+    // not available on this platform, see platform.hpp.
+    PlatformUnsupported,
 };
 
 #define MAKE_SPHAIRA_RESULT_ENUM(x) Result_##x =  MAKERESULT(Module_Sphaira, (Result)SphairaResult::x)
@@ -872,6 +874,7 @@ enum : Result {
     MAKE_SPHAIRA_RESULT_ENUM(GameLangBadIndex),
     MAKE_SPHAIRA_RESULT_ENUM(SaveInvalidArchiveLayout),
     MAKE_SPHAIRA_RESULT_ENUM(GcNoInitialData),
+    MAKE_SPHAIRA_RESULT_ENUM(PlatformUnsupported),
 };
 
 #undef MAKE_SPHAIRA_RESULT_ENUM

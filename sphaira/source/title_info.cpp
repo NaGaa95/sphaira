@@ -368,22 +368,31 @@ auto ThreadData::Get(u64 app_id, bool* cached) -> ThreadResultData* {
 
         if (!ns::IsNsControlFetchSlow()) {
             TimeStamp ts;
-            if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_CacheOnly, app_id, control.get(), sizeof(NsApplicationControlData), &actual_size))) {
+            if (R_SUCCEEDED(ns::GetApplicationControlData(NsApplicationControlSource_CacheOnly, app_id, control.get(), &actual_size))) {
                 has_nacp = true;
                 log_write("\t\t[ns control cache] time taken: %.2fs %zums\n", ts.GetSecondsD(), ts.GetMs());
             }
+        }
+
+        const auto load_from_storage = [&]() {
+            TimeStamp ts;
+            if (R_SUCCEEDED(ns::GetApplicationControlData(NsApplicationControlSource_Storage, app_id, control.get(), &actual_size))) {
+                has_nacp = true;
+                log_write("\t\t[ns control storage] time taken: %.2fs %zums\n", ts.GetSecondsD(), ts.GetMs());
+            }
+        };
+
+        // the manual load needs the Switch 1 keys, Switch 2 asks ns first.
+        if (!has_nacp && platform::IsSwitch2) {
+            load_from_storage();
         }
 
         if (!has_nacp) {
             has_nacp = manual_load = R_SUCCEEDED(LoadControlManual(app_id, control->nacp, result.get()));
         }
 
-        if (!has_nacp) {
-            TimeStamp ts;
-            if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, app_id, control.get(), sizeof(NsApplicationControlData), &actual_size))) {
-                has_nacp = true;
-                log_write("\t\t[ns control storage] time taken: %.2fs %zums\n", ts.GetSecondsD(), ts.GetMs());
-            }
+        if (!has_nacp && !platform::IsSwitch2) {
+            load_from_storage();
         }
 
         if (!has_nacp) {

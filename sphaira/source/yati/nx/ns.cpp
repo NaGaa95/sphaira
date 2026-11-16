@@ -1,6 +1,7 @@
 #include "yati/nx/ns.hpp"
 #include "yati/nx/service_guard.h"
 #include "defines.hpp"
+#include "platform.hpp"
 
 namespace sphaira::ns {
 namespace {
@@ -65,6 +66,25 @@ Result DeleteApplicationRecord(u64 tid) {
 
 Result InvalidateApplicationControlCache(u64 tid) {
     return serviceDispatchIn(&g_nsAppSrv, 404, tid);
+}
+
+Result GetApplicationControlData(NsApplicationControlSource source, u64 app_id, NsApplicationControlData* data, u64* actual_size) {
+    u64 size{};
+    Result rc = MAKERESULT(Module_Libnx, LibnxError_NotFound);
+
+    if constexpr (platform::IsSwitch2) {
+        u32 unk{};
+        rc = nsGetApplicationControlData2(source, app_id, data, sizeof(*data), 1, 0, &size, &unk);
+    }
+
+    if (R_FAILED(rc)) {
+        rc = nsGetApplicationControlData(source, app_id, data, sizeof(*data), &size);
+    }
+
+    R_TRY(rc);
+    R_UNLESS(size >= sizeof(data->nacp) && size <= sizeof(*data), MAKERESULT(Module_Libnx, LibnxError_BadInput));
+    *actual_size = size;
+    R_SUCCEED();
 }
 
 Result GetApplicationRecords(u64 id, std::vector<ncm::ContentStorageRecord>& out) {

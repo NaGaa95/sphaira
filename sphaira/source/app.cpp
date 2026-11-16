@@ -376,10 +376,39 @@ void appplet_hook_calback(AppletHookType type, void *param) {
     }
 }
 
+bool g_window_follows_display{};
+
+// Switch 2: the default window follows the output resolution, 1080p handheld
+// and the tv's docked. libounce updates it on docking and tv output changes.
+void ApplyDisplayModeDimensions() {
+#if defined(__SWITCH2__)
+    const auto rc = nwindowSetModeDimensions(nwindowGetDefault(), 0, 0, 0, 0);
+    if (R_FAILED(rc)) {
+        log_write("[DISPLAY] nwindowSetModeDimensions() failed: 0x%X\n", rc);
+    }
+    g_window_follows_display = R_SUCCEEDED(rc);
+#endif
+}
+
 auto GetFrameBufferSize() -> FrameBufferSize {
+    // 4K, the Switch 2's largest output.
+    constexpr u32 MAX_WIDTH = 3840;
+    constexpr u32 MAX_HEIGHT = 2160;
+
     FrameBufferSize fb{};
 
-    switch (appletGetOperationMode()) {
+    if (platform::FollowsDisplayResolution) {
+        // falls back to the 1080p of the Switch 2 screen.
+        u32 width{}, height{};
+        if (!g_window_follows_display || R_FAILED(nwindowGetDimensions(nwindowGetDefault(), &width, &height)) ||
+            width < SCREEN_WIDTH || height < SCREEN_HEIGHT || width > MAX_WIDTH || height > MAX_HEIGHT) {
+            width = 1920;
+            height = 1080;
+        }
+
+        fb.size.x = width;
+        fb.size.y = height;
+    } else switch (appletGetOperationMode()) {
         case AppletOperationMode_Handheld:
             fb.size.x = 1280;
             fb.size.y = 720;
@@ -802,6 +831,10 @@ auto App::GetReplaceHbmenuEnable() -> bool {
 }
 
 auto App::GetInstallEnable() -> bool {
+    if constexpr (!platform::SupportsInstall) {
+        return false;
+    }
+
     if (IsEmummc()) {
         return GetInstallEmummcEnable();
     } else {
@@ -971,8 +1004,11 @@ void App::SetReplaceHbmenuEnable(bool enable) {
                         rc = nro_get_nacp(sphaira_path, sphaira_nacp);
                     }
 
+                    // only copy between builds for this console, an sd card can be shared.
+                    const auto hbmenu_native = nro_is_native("/hbmenu.nro");
+
                     if (R_SUCCEEDED(rc) && !std::strcmp(NacpLanguageEntries(sphaira_nacp)[0].name, "sphaira")) {
-                        if (IsVersionNewer(sphaira_nacp.display_version, hbmenu_nacp.display_version)) {
+                        if (hbmenu_native && IsVersionNewer(sphaira_nacp.display_version, hbmenu_nacp.display_version) && nro_is_native(sphaira_path)) {
                             if (R_FAILED(rc = g_app->m_fs->copy_entire_file(sphaira_path, "/hbmenu.nro"))) {
                                 log_write("failed to copy entire file: %s 0x%X module: %u desc: %u\n", sphaira_path.s, rc, R_MODULE(rc), R_DESCRIPTION(rc));
                             } else {
@@ -982,8 +1018,10 @@ void App::SetReplaceHbmenuEnable(bool enable) {
                     } else {
                         // sphaira doesn't yet exist, create a new file.
                         sphaira_path = "/switch/sphaira/sphaira.nro";
-                        g_app->m_fs->CreateDirectoryRecursively("/switch/sphaira/");
-                        g_app->m_fs->copy_entire_file(sphaira_path, "/hbmenu.nro");
+                        if (hbmenu_native) {
+                            g_app->m_fs->CreateDirectoryRecursively("/switch/sphaira/");
+                            g_app->m_fs->copy_entire_file(sphaira_path, "/hbmenu.nro");
+                        }
                     }
 
                     // this should never fail, if it does, well then the sd card is fucked.
@@ -1683,7 +1721,7 @@ App::App(const char* argv0) {
     }
 
     // set if we are hbmenu
-    if (IsHbmenu()) {
+    if (IsHbmenu() && platform::ExitsProcessAsHbmenu) {
         __nx_applet_exit_mode = 1;
     }
 
@@ -1838,24 +1876,26 @@ App::App(const char* argv0) {
             log_write("[version] display_version: %s\n", fw_version.display_version);
             log_write("[version] display_title: %s\n", fw_version.display_title);
 
-            splInitialize();
-            ON_SCOPE_EXIT(splExit());
+            if constexpr (platform::HasAtmosphere) {
+                splInitialize();
+                ON_SCOPE_EXIT(splExit());
 
-            u64 out{};
-            splGetConfig((SplConfigItem)65000, &out);
-            log_write("[ams] version: %lu.%lu.%lu\n", (out >> 56) & 0xFF, (out >> 48) & 0xFF, (out >> 40) & 0xFF);
-            log_write("[ams] target version: %lu.%lu.%lu\n", (out >> 24) & 0xFF, (out >> 16) & 0xFF, (out >> 8) & 0xFF);
-            log_write("[ams] key gen: %lu\n", (out >> 32) & 0xFF);
+                u64 out{};
+                splGetConfig((SplConfigItem)65000, &out);
+                log_write("[ams] version: %lu.%lu.%lu\n", (out >> 56) & 0xFF, (out >> 48) & 0xFF, (out >> 40) & 0xFF);
+                log_write("[ams] target version: %lu.%lu.%lu\n", (out >> 24) & 0xFF, (out >> 16) & 0xFF, (out >> 8) & 0xFF);
+                log_write("[ams] key gen: %lu\n", (out >> 32) & 0xFF);
 
-            splGetConfig((SplConfigItem)65003, &out);
-            log_write("[ams] hash: %lx\n", out);
+                splGetConfig((SplConfigItem)65003, &out);
+                log_write("[ams] hash: %lx\n", out);
 
-            splGetConfig((SplConfigItem)65010, &out);
-            log_write("[ams] usb 3.0 enabled: %lu\n", out);
+                splGetConfig((SplConfigItem)65010, &out);
+                log_write("[ams] usb 3.0 enabled: %lu\n", out);
+            }
         }
 
-        // get emummc config.
-        {
+        // get emummc config. the smc would end the process on Switch 2.
+        if constexpr (platform::HasAtmosphere) {
             SCOPED_TIMESTAMP("emummc detect init");
             alignas(0x1000) AmsEmummcPaths paths{};
             SecmonArgs args{};
@@ -1970,12 +2010,12 @@ App::App(const char* argv0) {
         }
         #endif // ENABLE_DEVOPTAB_SMB2
 
-        {
+        if (platform::SupportsGames) {
             SCOPED_TIMESTAMP("game init");
             devoptab::MountGameAll();
         }
 
-        {
+        if (platform::SupportsNandAccess) {
             SCOPED_TIMESTAMP("fatfs init");
             devoptab::MountFatfsAll();
         }
@@ -2042,6 +2082,10 @@ App::App(const char* argv0) {
     // get current size of the framebuffer
     {
         SCOPED_TIMESTAMP("nvg init");
+        if (platform::FollowsDisplayResolution) {
+            ApplyDisplayModeDimensions();
+        }
+
         const auto fb = GetFrameBufferSize();
         s_width = fb.size.x;
         s_height = fb.size.y;
@@ -2241,7 +2285,7 @@ void App::DisplayMenuOptions(bool left_side) {
         }
     }
 
-    if (App::IsApplication()) {
+    if (platform::SupportsWebApplet && App::IsApplication()) {
         options->Add<ui::SidebarEntryCallback>("Web"_i18n, [](){
             // add some default entries, will use a config file soon so users can set their own.
             ui::PopupList::Items items;
@@ -2298,8 +2342,10 @@ void App::DisplayAdvancedOptions(bool left_side) {
         App::SetLogEnable(enable);
     }, "Logs to /config/sphaira/log.txt"_i18n);
 
-    options->Add<ui::SidebarEntryBool>("Show ABI warning"_i18n, App::GetApp()->m_show_abi_warning,
-        "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues."_i18n);
+    if (platform::ShowsAbiWarning) {
+        options->Add<ui::SidebarEntryBool>("Show ABI warning"_i18n, App::GetApp()->m_show_abi_warning,
+            "Shows a warning for homebrew built for an older ABI. These applications may have compatibility issues."_i18n);
+    }
 
     options->Add<ui::SidebarEntryBool>("Replace hbmenu on exit"_i18n, App::GetReplaceHbmenuEnable(), [](bool& enable){
         App::SetReplaceHbmenuEnable(enable);
@@ -2387,15 +2433,20 @@ void App::DisplayAdvancedOptions(bool left_side) {
         }
     }, i18n::get(g_app->m_right_menu.Get()), "Set the menu that appears on the right tab."_i18n);
 
-    options->Add<ui::SidebarEntryCallback>("Install options"_i18n, [left_side](){
-        App::DisplayInstallOptions(left_side);
-    },  i18n::get("install_options_info",
-            "Change the install options.\n"
-            "You can enable installing from here."));
+    if (platform::SupportsInstall) {
+        options->Add<ui::SidebarEntryCallback>("Install options"_i18n, [left_side](){
+            App::DisplayInstallOptions(left_side);
+        },  i18n::get("install_options_info",
+                "Change the install options.\n"
+                "You can enable installing from here."));
+    }
 
-    options->Add<ui::SidebarEntryCallback>("Export options"_i18n, [left_side](){
-        App::DisplayDumpOptions(left_side);
-    },  "Change the export options."_i18n);
+    // only games and game cards are exported.
+    if (platform::SupportsGames || platform::SupportsGameCard) {
+        options->Add<ui::SidebarEntryCallback>("Export options"_i18n, [left_side](){
+            App::DisplayDumpOptions(left_side);
+        },  "Change the export options."_i18n);
+    }
 }
 
 void App::DisplayInstallOptions(bool left_side) {
@@ -2643,85 +2694,97 @@ void App::DisplayFtpOptions(bool left_side) {
         }
     );
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show album"_i18n, App::GetApp()->m_ftp_show_album,
-        "Shows the microSD card album folder."_i18n
-    );
+    if (platform::SupportsFtpSystemMounts) {
+        options->Add<ui::SidebarEntryBool>(
+            "Show album"_i18n, App::GetApp()->m_ftp_show_album,
+            "Shows the microSD card album folder."_i18n
+        );
+    }
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show Atmosphere contents"_i18n, App::GetApp()->m_ftp_show_ams_contents,
-        "Shows the shortcut for the /atmosphere/contents folder."_i18n
-    );
+    if (platform::HasAtmosphere) {
+        options->Add<ui::SidebarEntryBool>(
+            "Show Atmosphere contents"_i18n, App::GetApp()->m_ftp_show_ams_contents,
+            "Shows the shortcut for the /atmosphere/contents folder."_i18n
+        );
+    }
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show bis storage"_i18n, App::GetApp()->m_ftp_show_bis_storage,
-        i18n::get("bis_contents_info",
-            "Shows the bis folder which contains the following:\n"
-            "- BootPartition1Root.bin\n"
-            "- BootPartition2Root.bin\n"
-            "- UserDataRoot.bin\n"
-            "- BootConfigAndPackage2Part1.bin\n"
-            "- BootConfigAndPackage2Part2.bin\n"
-            "- BootConfigAndPackage2Part3.bin\n"
-            "- BootConfigAndPackage2Part4.bin\n"
-            "- BootConfigAndPackage2Part5.bin\n"
-            "- BootConfigAndPackage2Part6.bin\n"
-            "- CalibrationFile.bin\n"
-            "- SafeMode.bin\n"
-            "- User.bin\n"
-            "- System.bin\n"
-            "- SystemProperEncryption.bin"
-        )
-    );
+    if (platform::SupportsNandAccess) {
+        options->Add<ui::SidebarEntryBool>(
+            "Show bis storage"_i18n, App::GetApp()->m_ftp_show_bis_storage,
+            i18n::get("bis_contents_info",
+                "Shows the bis folder which contains the following:\n"
+                "- BootPartition1Root.bin\n"
+                "- BootPartition2Root.bin\n"
+                "- UserDataRoot.bin\n"
+                "- BootConfigAndPackage2Part1.bin\n"
+                "- BootConfigAndPackage2Part2.bin\n"
+                "- BootConfigAndPackage2Part3.bin\n"
+                "- BootConfigAndPackage2Part4.bin\n"
+                "- BootConfigAndPackage2Part5.bin\n"
+                "- BootConfigAndPackage2Part6.bin\n"
+                "- CalibrationFile.bin\n"
+                "- SafeMode.bin\n"
+                "- User.bin\n"
+                "- System.bin\n"
+                "- SystemProperEncryption.bin"
+            )
+        );
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show bis file systems"_i18n, App::GetApp()->m_ftp_show_bis_fs,
-        i18n::get("bis_fs_info",
-            "Shows the following bis file systems:\n"
-            "- bis_calibration_file\n"
-            "- bis_safe_mode\n"
-            "- bis_user\n"
-            "- bis_system"
-        )
-    );
+        options->Add<ui::SidebarEntryBool>(
+            "Show bis file systems"_i18n, App::GetApp()->m_ftp_show_bis_fs,
+            i18n::get("bis_fs_info",
+                "Shows the following bis file systems:\n"
+                "- bis_calibration_file\n"
+                "- bis_safe_mode\n"
+                "- bis_user\n"
+                "- bis_system"
+            )
+        );
+    }
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show system contents"_i18n, App::GetApp()->m_ftp_show_content_system,
-        "Shows the system contents folder."_i18n
-    );
+    if (platform::SupportsFtpSystemMounts) {
+        options->Add<ui::SidebarEntryBool>(
+            "Show system contents"_i18n, App::GetApp()->m_ftp_show_content_system,
+            "Shows the system contents folder."_i18n
+        );
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show user contents"_i18n, App::GetApp()->m_ftp_show_content_user,
-        "Shows the user contents folder."_i18n
-    );
+        options->Add<ui::SidebarEntryBool>(
+            "Show user contents"_i18n, App::GetApp()->m_ftp_show_content_user,
+            "Shows the user contents folder."_i18n
+        );
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show microSD contents"_i18n, App::GetApp()->m_ftp_show_content_sd,
-        i18n::get("microsd_contents_info",
-            "Shows the microSD contents folder.\n\n"
-            "NOTE: This is not the normal microSD card storage, it is instead "
-            "the location where NCA's are stored. The normal microSD card is always mounted."
-        )
-    );
+        options->Add<ui::SidebarEntryBool>(
+            "Show microSD contents"_i18n, App::GetApp()->m_ftp_show_content_sd,
+            i18n::get("microsd_contents_info",
+                "Shows the microSD contents folder.\n\n"
+                "NOTE: This is not the normal microSD card storage, it is instead "
+                "the location where NCA's are stored. The normal microSD card is always mounted."
+            )
+        );
+    }
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show games"_i18n, App::GetApp()->m_ftp_show_games,
-        i18n::get("games_ftp_info",
-            "Shows the games folder.\n\n"
-            "This folder contains all of your installed games, allowing you to create "
-            "backups over FTP!\n\n"
-            "NOTE: This folder is read-only. You cannot delete games over FTP."
-        )
-    );
+    if (platform::SupportsGames) {
+        options->Add<ui::SidebarEntryBool>(
+            "Show games"_i18n, App::GetApp()->m_ftp_show_games,
+            i18n::get("games_ftp_info",
+                "Shows the games folder.\n\n"
+                "This folder contains all of your installed games, allowing you to create "
+                "backups over FTP!\n\n"
+                "NOTE: This folder is read-only. You cannot delete games over FTP."
+            )
+        );
+    }
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show install"_i18n, App::GetApp()->m_ftp_show_install,
-        i18n::get("install_ftp_info",
-            "Shows the install folder.\n\n"
-            "This folder is used for installing games via FTP.\n\n"
-            "NOTE: You must open the \"FTP Install\" menu when trying to install a game!"
-        )
-    );
+    if (platform::SupportsInstall) {
+        options->Add<ui::SidebarEntryBool>(
+            "Show install"_i18n, App::GetApp()->m_ftp_show_install,
+            i18n::get("install_ftp_info",
+                "Shows the install folder.\n\n"
+                "This folder is used for installing games via FTP.\n\n"
+                "NOTE: You must open the \"FTP Install\" menu when trying to install a game!"
+            )
+        );
+    }
 
     options->Add<ui::SidebarEntryBool>(
         "Show mounts"_i18n, App::GetApp()->m_ftp_show_mounts,
@@ -2873,6 +2936,11 @@ void App::DisplayHddOptions(bool left_side) {
 }
 
 void App::ShowEnableInstallPrompt() {
+    if constexpr (!platform::SupportsInstall) {
+        App::Push<ui::OptionBox>("Installing is not supported on Switch 2"_i18n, "OK"_i18n);
+        return;
+    }
+
     // warn the user the dangers of installing.
     App::Push<ui::OptionBox>(
         "Installing is disabled, enable now?"_i18n,
@@ -3070,7 +3138,7 @@ App::~App() {
                     }
 
                     // found sphaira, now lets get compare version
-                    if (R_SUCCEEDED(rc) && !std::strcmp(NacpLanguageEntries(sphaira_nacp)[0].name, "sphaira")) {
+                    if (R_SUCCEEDED(rc) && !std::strcmp(NacpLanguageEntries(sphaira_nacp)[0].name, "sphaira") && nro_is_native(sphaira_path)) {
                         if (IsVersionNewer(hbmenu_nacp.display_version, sphaira_nacp.display_version)) {
                             if (R_FAILED(rc = m_fs->copy_entire_file(GetExePath(), sphaira_path))) {
                                 log_write("failed to copy entire file: %s 0x%X module: %u desc: %u\n", sphaira_path.s, rc, R_MODULE(rc), R_DESCRIPTION(rc));

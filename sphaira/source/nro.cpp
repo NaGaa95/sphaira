@@ -7,6 +7,7 @@
 #include "owo.hpp"
 
 #include <switch.h>
+#include <algorithm>
 #include <vector>
 #include <cstring>
 #include <string_view>
@@ -15,25 +16,72 @@
 namespace sphaira {
 namespace {
 
-auto nro_get_abi_revision(fs::File& file, const NroData& data) -> u32 {
-    struct {
-        u32 magic;
-        u32 revision;
-    } abi{};
+// the MOD0 header is followed by records: libnx's "LNY0".."LNY2", then
+// libounce's "OUN0".
+constexpr u32 MOD0_MAGIC = 0x30444F4D; // "MOD0"
+constexpr u32 MOD0_HEADER_SIZE = 0x1C;
+constexpr u32 MOD0_EXTENSION_SIZE = 0xC;
+constexpr u32 MOD0_EXTENSIONS_MAX = 8;
+constexpr u32 MOD0_LNY_PREFIX = 0x594E4C; // "LNY"
+constexpr u32 MOD0_LNY2_MAGIC = 0x32594E4C; // "LNY2"
+constexpr u32 MOD0_OUN0_MAGIC = 0x304E554F; // "OUN0"
+constexpr u32 MOD0_READ_SIZE = MOD0_HEADER_SIZE + MOD0_EXTENSIONS_MAX * MOD0_EXTENSION_SIZE;
 
-    // The LNY2 ABI marker follows the module header, as checked by hbmenu.
-    const u64 offset = u64(data.start.mod_offset) + 0x34;
-    if (offset + sizeof(abi) > data.header.size) {
-        return 0;
+struct NroModuleInfo {
+    u32 abi_revision{};
+    NroTarget target{NroTarget::Unknown};
+};
+
+auto read_u32(std::span<const u8> data, size_t offset) -> u32 {
+    u32 value;
+    std::memcpy(&value, data.data() + offset, sizeof(value));
+    return value;
+}
+
+auto parse_mod0(std::span<const u8> mod0) -> NroModuleInfo {
+    NroModuleInfo info{};
+    if (mod0.size() < MOD0_HEADER_SIZE || read_u32(mod0, 0) != MOD0_MAGIC) {
+        return info;
     }
 
+    for (u32 i = 0; i < MOD0_EXTENSIONS_MAX; i++) {
+        const size_t offset = MOD0_HEADER_SIZE + i * MOD0_EXTENSION_SIZE;
+        if (offset + MOD0_EXTENSION_SIZE > mod0.size()) {
+            break;
+        }
+
+        const auto magic = read_u32(mod0, offset);
+        if (magic == MOD0_OUN0_MAGIC) {
+            switch (read_u32(mod0, offset + 4)) {
+                case 1: info.target = NroTarget::Switch1; break;
+                case 2: info.target = NroTarget::Switch2; break;
+            }
+            break;
+        } else if (magic == MOD0_LNY2_MAGIC) {
+            info.abi_revision = read_u32(mod0, offset + 4);
+        } else if ((magic & 0xFFFFFF) != MOD0_LNY_PREFIX) {
+            break;
+        }
+    }
+
+    return info;
+}
+
+auto nro_read_module_info(fs::File& file, const NroData& data) -> NroModuleInfo {
+    // the records are in the code, which ends at header.size.
+    const u64 offset = data.start.mod_offset;
+    if (offset >= data.header.size) {
+        return {};
+    }
+
+    u8 mod0[MOD0_READ_SIZE]{};
+    const u64 size = std::min<u64>(sizeof(mod0), data.header.size - offset);
     u64 bytes_read{};
-    if (R_FAILED(file.Read(offset, &abi, sizeof(abi), FsReadOption_None, &bytes_read)) ||
-        bytes_read != sizeof(abi) || abi.magic != 0x32594E4C) {
-        return 0;
+    if (R_FAILED(file.Read(offset, mod0, size, FsReadOption_None, &bytes_read))) {
+        return {};
     }
 
-    return abi.revision;
+    return parse_mod0({mod0, bytes_read});
 }
 
 auto nro_parse_internal(fs::Fs* fs, const fs::FsPath& path, NroEntry& entry) -> Result {
@@ -58,7 +106,9 @@ auto nro_parse_internal(fs::Fs* fs, const fs::FsPath& path, NroEntry& entry) -> 
     R_TRY(f.Read(0, &data, sizeof(data), FsReadOption_None, &bytes_read));
     R_UNLESS(bytes_read == sizeof(data), Result_NroBadSize);
     R_UNLESS(data.header.magic == NROHEADER_MAGIC, Result_NroBadMagic);
-    entry.abi_revision = nro_get_abi_revision(f, data);
+    const auto module_info = nro_read_module_info(f, data);
+    entry.abi_revision = module_info.abi_revision;
+    entry.target = module_info.target;
 
     NroAssetHeader asset{};
     R_TRY(f.Read(data.header.size, &asset, sizeof(asset), FsReadOption_None, &bytes_read));
@@ -258,6 +308,23 @@ auto nro_verify(std::span<const u8> data) -> Result {
     R_SUCCEED();
 }
 
+auto nro_is_native(const fs::FsPath& path) -> bool {
+    fs::FsNativeSd fs;
+    fs::File f;
+    if (R_FAILED(fs.GetFsOpenResult()) || R_FAILED(fs.OpenFile(path, FsOpenMode_Read, &f))) {
+        return false;
+    }
+
+    NroData data{};
+    u64 bytes_read{};
+    if (R_FAILED(f.Read(0, &data, sizeof(data), FsReadOption_None, &bytes_read)) ||
+        bytes_read != sizeof(data) || data.header.magic != NROHEADER_MAGIC) {
+        return false;
+    }
+
+    return nro_target_is_native(nro_read_module_info(f, data).target);
+}
+
 auto nro_parse(const fs::FsPath& path, NroEntry& entry) -> Result {
     fs::FsNativeSd fs;
     return nro_parse_internal(&fs, path, entry);
@@ -421,7 +488,8 @@ auto nro_launch(std::string path, std::string args, CpuCoreMode core_mode) -> Re
         args = nro_add_arg(path) + ' ' + args;
     }
 
-    if (process_matches_core_mode(core_mode)) {
+    // the core launch needs a forwarder, Switch 2 ignores cpu_cores.
+    if (!platform::SupportsForwarders || process_matches_core_mode(core_mode)) {
         return launch_internal(path, args);
     }
 

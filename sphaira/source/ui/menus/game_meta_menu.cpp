@@ -400,7 +400,7 @@ Result Menu::GetNcmSizeOfMetaStatus(MetaEntry& entry) const {
                 // fallback to ns
                 std::vector<u8> buf(sizeof(NsApplicationControlData));
                 u64 actual_size;
-                if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, meta.app_id, (NsApplicationControlData*)buf.data(), buf.size(), &actual_size))) {
+                if (R_SUCCEEDED(ns::GetApplicationControlData(NsApplicationControlSource_Storage, meta.app_id, (NsApplicationControlData*)buf.data(), &actual_size))) {
                     has_nacp = true;
                     std::memcpy(&entry.nacp, buf.data() + MINI_NACP_OFFSET, sizeof(entry.nacp));
                 }

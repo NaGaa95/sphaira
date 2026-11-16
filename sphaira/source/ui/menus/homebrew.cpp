@@ -236,8 +236,8 @@ void Menu::Update(Controller* controller, TouchInfo* touch) {
 }
 
 void Menu::Draw(NVGcontext* vg, Theme* theme) {
-    const auto show_abi_warning = App::GetApp()->m_show_abi_warning.Get();
-    const auto abi_warning = show_abi_warning && !m_entries_current.empty() && GetEntry().IsAbiOutdated();
+    const auto show_abi_warning = platform::ShowsAbiWarning && App::GetApp()->m_show_abi_warning.Get();
+    const auto abi_warning = show_abi_warning && !m_entries_current.empty() && GetEntry().HasAbiWarning();
     SetTitleWarning(abi_warning ? "ABI warning: compatibility issues"_i18n : "");
     MenuBase::Draw(vg, theme);
 
@@ -291,7 +291,7 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
         const auto image = e.image > 0 || (e.icon_size && e.icon_offset)
             ? e.image : App::GetDefaultImage();
         const auto image_v = DrawEntry(vg, theme, m_layout.Get(), v, selected, image, name.c_str(), e.GetAuthor(), e.GetDisplayVersion());
-        if (show_abi_warning && e.IsAbiOutdated()) {
+        if (show_abi_warning && e.HasAbiWarning()) {
             const auto size = std::clamp(image_v.w * 0.16f, 20.f, 28.f);
             gfx::drawWarning(vg, v.x + v.w - size - 6.f,
                 image_v.y + image_v.h - size, size);
@@ -796,11 +796,13 @@ void Menu::DisplayOptions() {
                 "Files and folders created by the homebrew will still remain. "
                 "Use the FileBrowser to delete them."));
 
-        auto forwarder_entry = options->Add<SidebarEntryCallback>("Install Forwarder"_i18n, [this](){
-            InstallHomebrew();
-        }, true);
+        if (platform::SupportsForwarders) {
+            auto forwarder_entry = options->Add<SidebarEntryCallback>("Install Forwarder"_i18n, [this](){
+                InstallHomebrew();
+            }, true);
 
-        forwarder_entry->Depends(App::GetInstallEnable, i18n::get(App::INSTALL_DEPENDS_STR), App::ShowEnableInstallPrompt);
+            forwarder_entry->Depends(App::GetInstallEnable, i18n::get(App::INSTALL_DEPENDS_STR), App::ShowEnableInstallPrompt);
+        }
     }
 }
 

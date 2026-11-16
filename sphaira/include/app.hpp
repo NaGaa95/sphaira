@@ -8,6 +8,7 @@
 #include "option.hpp"
 #include "fs.hpp"
 #include "log.hpp"
+#include "platform.hpp"
 #include "utils/audio.hpp"
 
 #ifdef USE_NVJPG
@@ -187,7 +188,7 @@ public:
     }
 
     static auto CanSetCpuCores() -> bool {
-        return IsApplication() && GetApp()->m_is_launched_via_sphaira_forwader;
+        return platform::SupportsForwarders && IsApplication() && GetApp()->m_is_launched_via_sphaira_forwader;
     }
 
     // returns true if launched in applet mode with a title suspended in the background.
@@ -249,7 +250,12 @@ public:
 
         if (!ref_count || force) {
             ref_count = 0;
-            appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
+            // on Switch 2 an application has to cancel its boost request.
+            if (platform::IsSwitch2 && appletGetAppletType() == AppletType_Application) {
+                appletCancelCpuBoostMode();
+            } else {
+                appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
+            }
         }
     }
 
@@ -284,6 +290,7 @@ public:
     static constexpr inline auto PLAYLOG_PATH = "/config/sphaira/playlog.ini";
     static constexpr inline auto INI_SECTION = "config";
     static constexpr inline auto DEFAULT_THEME_PATH = "romfs:/themes/default_theme.ini";
+    static constexpr inline auto DEFAULT_RIGHT_MENU = platform::SupportsAppstore ? "Appstore" : "Saves";
 
     fs::FsPath m_app_path;
     u64 m_start_timestamp{};
@@ -333,7 +340,7 @@ public:
     option::OptionLong m_language{INI_SECTION, "language", 0}; // auto
     option::OptionString m_center_menu{INI_SECTION, "center_side_menu", "Homebrew"};
     option::OptionString m_left_menu{INI_SECTION, "left_side_menu", "FileBrowser"};
-    option::OptionString m_right_menu{INI_SECTION, "right_side_menu", "Appstore"};
+    option::OptionString m_right_menu{INI_SECTION, "right_side_menu", DEFAULT_RIGHT_MENU};
     option::OptionBool m_progress_boost_mode{INI_SECTION, "progress_boost_mode", true};
 
     // install options

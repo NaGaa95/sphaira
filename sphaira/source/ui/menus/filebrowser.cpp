@@ -1405,6 +1405,8 @@ void FsView::OnRenameCallback() {
 }
 
 auto FsView::CheckIfUpdateFolder() -> Result {
+    // daybreak is atmosphère's system updater.
+    R_UNLESS(platform::HasAtmosphere, Result_FileBrowserDirNotDaybreak);
     R_UNLESS(IsSd(), Result_FileBrowserDirNotDaybreak);
     R_UNLESS(m_fs->IsNative(), Result_FileBrowserDirNotDaybreak);
 
@@ -1765,7 +1767,7 @@ void FsView::DisplayOptions() {
     };
 
     if (m_menu->CanInstall()) {
-        if (m_entries_current.size()) {
+        if (m_entries_current.size() && platform::SupportsInstall) {
             if (check_all_ext(INSTALL_EXTENSIONS)) {
                 auto entry = options->Add<SidebarEntryCallback>("Install"_i18n, [this](){
                     InstallFiles();
@@ -1774,7 +1776,7 @@ void FsView::DisplayOptions() {
             }
         }
 
-        if (IsSd() && m_entries_current.size() && !m_selected_count) {
+        if (IsSd() && m_entries_current.size() && !m_selected_count && platform::SupportsForwarders) {
             if (GetEntry().IsFile() && (IsSamePath(GetEntry().GetExtension(), "nro") || !m_menu->FindFileAssocFor().empty())) {
                 auto entry = options->Add<SidebarEntryCallback>("Install Forwarder"_i18n, [this](){;
                     InstallForwarder();

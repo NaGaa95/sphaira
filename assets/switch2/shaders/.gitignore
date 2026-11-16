@@ -1,0 +1,2 @@
+# the top level .gitignore ignores *.dksh build outputs.
+!*.dksh

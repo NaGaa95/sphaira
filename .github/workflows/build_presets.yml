@@ -66,3 +66,38 @@ jobs:
       with:
         name: sphaira-${{ matrix.preset }}
         path: build/${{ matrix.preset }}/sphaira.nro
+
+  # without uam2, the prebuilt shaders in assets/switch2/shaders are used.
+  build-switch2:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Update packages
+      run: |
+        sudo -n apt-get update
+        sudo -n apt-get install -y --no-install-recommends meson ninja-build flex bison g++ python3 bzip2 xz-utils curl
+
+    - name: Silence all git safe directory warnings
+      run: git config --system --add safe.directory '*'
+
+    # fetch latest cmake
+    - uses: lukka/get-cmake@v4.4.2
+
+    - name: Install the Switch 2 devkit and drako3d
+      run: sh tools/switch2/setup.sh
+
+    - name: Configure CMake
+      run: cmake --preset Switch2
+
+    - name: Build
+      run: cmake --build --preset Switch2 --parallel $(nproc)
+
+    - name: Deploy
+      if: ${{ github.event_name != 'pull_request' && github.event.action != 'unassigned' }}
+      uses: actions/upload-artifact@master
+      with:
+        name: sphaira-Switch2
+        path: build/Switch2/sphaira.nro

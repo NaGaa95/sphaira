@@ -529,7 +529,8 @@ static double highlightGradientY = 0;
 static double highlightColor     = 0;
 
 void updateHighlightAnimation() {
-    const auto currentTime = svcGetSystemTick() * 10 / 192 / 1000;
+    // in ms, the tick rate differs on Switch 2.
+    const auto currentTime = armTicksToNs(armGetSystemTick()) / 1'000'000;
 
     // Update variables
     highlightGradientX = (std::cos((double)currentTime / HIGHLIGHT_SPEED / 3.0) + 1.0) / 2.0;

@@ -27,6 +27,10 @@ Result ListApplicationRecordContentMeta(u64 offset, u64 tid, ncm::ContentStorage
 Result DeleteApplicationRecord(u64 tid);
 Result InvalidateApplicationControlCache(u64 tid);
 
+// nsGetApplicationControlData() refuses most Switch 2 titles (0x5010), on
+// Switch 2 the newer command answers for them. checks that actual_size is valid.
+Result GetApplicationControlData(NsApplicationControlSource source, u64 app_id, NsApplicationControlData* data, u64* actual_size);
+
 // helpers
 
 // fills out with the number or records available

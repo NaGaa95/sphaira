@@ -6,11 +6,28 @@
 #include <span>
 #include <optional>
 #include "fs.hpp"
+#include "platform.hpp"
 #include "utils/core.hpp"
 
 namespace sphaira {
 
 inline constexpr u32 NroAbiCurrentRevision = 1;
+
+// from the "OUN0" record libounce (the Switch 2 libnx) adds to the MOD0 header.
+enum class NroTarget : u8 {
+    // no record: libnx, or an older Switch 2 devkit.
+    Unknown,
+    Switch1,
+    Switch2,
+};
+
+// true if a program built for that platform runs on this build's platform.
+constexpr auto nro_target_is_native(NroTarget target) -> bool {
+    if (platform::IsSwitch2) {
+        return target == NroTarget::Switch2;
+    }
+    return target != NroTarget::Switch2;
+}
 
 struct NroData {
     NroStart start;
@@ -36,6 +53,7 @@ struct NroEntry {
     u64 icon_size{};
     u64 icon_offset{};
     u32 abi_revision{};
+    NroTarget target{};
 
     FsTimeStampRaw timestamp{};
     Hbini hbini{};
@@ -60,10 +78,17 @@ struct NroEntry {
     auto IsAbiOutdated() const -> bool {
         return abi_revision < NroAbiCurrentRevision;
     }
+
+    auto HasAbiWarning() const -> bool {
+        return IsAbiOutdated() || !nro_target_is_native(target);
+    }
 };
 
 auto nro_verify(std::span<const u8> data) -> Result;
 auto nro_parse(const fs::FsPath& path, NroEntry& entry) -> Result;
+
+// true if the nro at path is built for this build's platform.
+auto nro_is_native(const fs::FsPath& path) -> bool;
 
 /**
  * Scans a folder for all nro's.

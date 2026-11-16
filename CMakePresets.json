@@ -62,6 +62,25 @@
                 "LTO": false,
                 "DEV_BUILD": true
             }
+        },
+        {
+            "name": "Switch2",
+            "displayName": "Switch 2",
+            "inherits":["core"],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "MinSizeRel",
+                "LTO": true,
+                "SWITCH2": true
+            }
+        },
+        {
+            "name": "Switch2Dev",
+            "displayName": "Switch 2 Dev",
+            "inherits":["Switch2"],
+            "cacheVariables": {
+                "LTO": false,
+                "DEV_BUILD": true
+            }
         }
     ],
     "buildPresets": [
@@ -78,6 +97,16 @@
         {
             "name": "Dev",
             "configurePreset": "Dev",
+            "jobs": 16
+        },
+        {
+            "name": "Switch2",
+            "configurePreset": "Switch2",
+            "jobs": 16
+        },
+        {
+            "name": "Switch2Dev",
+            "configurePreset": "Switch2Dev",
             "jobs": 16
         }
     ]
