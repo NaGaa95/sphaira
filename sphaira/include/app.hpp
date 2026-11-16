@@ -232,32 +232,7 @@ public:
         }
     }
 
-    static void SetBoostMode(bool enable, bool force = false) {
-        static Mutex mutex{};
-        static int ref_count{};
-
-        mutexLock(&mutex);
-        ON_SCOPE_EXIT(mutexUnlock(&mutex));
-
-        if (enable) {
-            ref_count++;
-            appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad);
-        } else {
-            if (ref_count) {
-                ref_count--;
-            }
-        }
-
-        if (!ref_count || force) {
-            ref_count = 0;
-            // on Switch 2 an application has to cancel its boost request.
-            if (platform::IsSwitch2 && appletGetAppletType() == AppletType_Application) {
-                appletCancelCpuBoostMode();
-            } else {
-                appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
-            }
-        }
-    }
+    static void SetBoostMode(bool enable, bool force = false);
 
     static auto GetAccountList() -> std::vector<AccountProfileBase> {
         std::vector<AccountProfileBase> out;

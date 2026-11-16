@@ -219,6 +219,66 @@ Mutex g_screen_toggle_mutex{};
 u32 g_screen_toggle_ref_count{};
 bool g_screen_disabled{};
 
+// SetBoostMode(). on Switch 2 FastLoad drops the gpu to its minimum and
+// CancelCpuBoostMode doesn't undo it, so the end of a boost is checked against
+// the performance configuration from before it.
+bool g_boost_active{};
+u32 g_boost_from{};
+AppletOperationMode g_boost_operation{};
+bool g_boost_broken{};
+
+auto GetPerformanceConfiguration() -> u32 {
+    u32 configuration{};
+    appletGetCurrentPerformanceConfiguration(&configuration);
+    return configuration;
+}
+
+// waits up to 100ms for the system to apply it.
+auto IsBoostRestored() -> bool {
+    for (int i = 0; i < 20; i++) {
+        // docking changes the configuration too, the boost is over then.
+        if (appletGetOperationMode() != g_boost_operation || GetPerformanceConfiguration() == g_boost_from) {
+            return true;
+        }
+        svcSleepThread(5'000'000);
+    }
+    return false;
+}
+
+void BeginBoost() {
+    if (platform::IsSwitch2) {
+        if (g_boost_broken) {
+            return;
+        }
+        g_boost_from = GetPerformanceConfiguration();
+        g_boost_operation = appletGetOperationMode();
+    }
+
+    g_boost_active = R_SUCCEEDED(appletSetCpuBoostMode(ApmCpuBoostMode_FastLoad));
+}
+
+void EndBoost() {
+    if (!g_boost_active) {
+        return;
+    }
+    g_boost_active = false;
+
+    const auto rc = appletSetCpuBoostMode(ApmCpuBoostMode_Normal);
+    if (!platform::IsSwitch2 || (R_SUCCEEDED(rc) && IsBoostRestored())) {
+        return;
+    }
+
+    const auto cancel_rc = appletCancelCpuBoostMode();
+    if (R_SUCCEEDED(cancel_rc) && IsBoostRestored()) {
+        log_write("[BOOST] ended with CancelCpuBoostMode, SetCpuBoostMode(Normal): 0x%X\n", rc);
+        return;
+    }
+
+    g_boost_broken = true;
+    log_write("[BOOST] configuration stayed 0x%X (0x%X before the boost), Normal: 0x%X cancel: 0x%X, no more boosts\n",
+        GetPerformanceConfiguration(), g_boost_from, rc, cancel_rc);
+}
+
 void deko3d_error_cb(void* userData, const char* context, DkResult result, const char* message) {
     switch (result) {
         case DkResult_Success:
@@ -1394,6 +1454,25 @@ void App::Draw() {
 
 auto App::GetApp() -> App* {
     return g_app;
+}
+
+void App::SetBoostMode(bool enable, bool force) {
+    static Mutex mutex{};
+    static int ref_count{};
+    SCOPED_MUTEX(&mutex);
+
+    if (enable) {
+        if (!ref_count++) {
+            BeginBoost();
+        }
+    } else if (ref_count) {
+        ref_count--;
+    }
+
+    if (!ref_count || force) {
+        ref_count = 0;
+        EndBoost();
+    }
 }
 
 auto App::AcquireScreenToggle() -> bool {
