@@ -294,6 +294,7 @@ FetchContent_Declare(nvjpg
 FetchContent_Declare(dr_libs
     GIT_REPOSITORY https://github.com/mackron/dr_libs.git
     GIT_TAG b962384
+    GIT_SUBMODULES ""
     SOURCE_SUBDIR NONE
 )
 
@@ -413,7 +414,8 @@ if (ENABLE_FTPSRV)
         GIT_REPOSITORY https://github.com/ITotalJustice/ftpsrv.git
         GIT_TAG 7c82402
         SOURCE_SUBDIR NONE
-        PATCH_COMMAND "${GIT_EXECUTABLE}" apply --ignore-whitespace "${CMAKE_SOURCE_DIR}/cmake/patches/ftpsrv-upload-callback.patch"
+        PATCH_COMMAND "${GIT_EXECUTABLE}" checkout -- .
+        COMMAND "${GIT_EXECUTABLE}" apply --ignore-whitespace "${CMAKE_SOURCE_DIR}/cmake/patches/ftpsrv-upload-callback.patch"
     )
 
     FetchContent_MakeAvailable(ftpsrv)
@@ -748,6 +750,8 @@ target_include_directories(libnxtc PUBLIC ${libnxtc_SOURCE_DIR}/include ${zlib_i
 find_library(minizip_lib minizip REQUIRED)
 find_path(minizip_inc minizip REQUIRED)
 
+# MSYS2 pkg-config emits Windows paths (D:/...) that break FindCURL.
+set(PKG_CONFIG_ARGN "--dont-define-prefix" CACHE STRING "" FORCE)
 find_package(CURL REQUIRED)
 find_library(mbedcrypto_lib mbedcrypto REQUIRED)
 

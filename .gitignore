@@ -11,6 +11,7 @@ src/ignoreme/
 old_code
 created_ncas
 .vscode/settings.json
+.vscode/.BROWSE.VC.*
 .idea
 info/
 assets/unused

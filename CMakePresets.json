@@ -50,7 +50,7 @@
                 "ENABLE_DEVOPTAB_SMB2": false,
                 "ENABLE_DEVOPTAB_FTP": false,
                 "ENABLE_DEVOPTAB_SFTP": false,
-                "ENABLE_DEVOPTAB_WEBDAV": false
+                "ENABLE_DEVOPTAB_WEBDAV": true
             }
         },
         {

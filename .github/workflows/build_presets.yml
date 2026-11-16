@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        preset: [Release]
+        preset: [Release,Lite]
     runs-on: ${{ matrix.os }}
     container: devkitpro/devkita64:latest
 
