@@ -138,6 +138,10 @@ DevoptabForm::DevoptabForm(DevoptabType type, const MountConfig& config)
 }
 
 DevoptabForm::DevoptabForm() : FormSidebar{"Mount Creator"_i18n} {
+    if constexpr (sizeof(TYPE_ENTRIES) > 0) {
+        m_type = TYPE_ENTRIES[0].type;
+    }
+
     SetupButtons(true);
 }
 
@@ -160,9 +164,15 @@ void DevoptabForm::UpdateSchemeURL() {
 }
 
 void DevoptabForm::SetupButtons(bool type_change) {
-    if (type_change) {
+    // an empty type list crashes when drawn, so skip it entirely.
+    if (type_change && sizeof(TYPE_ENTRIES) > 0) {
         SidebarEntryArray::Items items;
+        s64 selected = 0;
+
         for (const auto& e : TYPE_ENTRIES) {
+            if (e.type == m_type) {
+                selected = (s64)items.size();
+            }
             items.emplace_back(e.name);
         }
 
@@ -171,7 +181,7 @@ void DevoptabForm::SetupButtons(bool type_change) {
                 m_type = TYPE_ENTRIES[index].type;
                 UpdateSchemeURL();
             },
-            (s64)m_type,
+            selected,
             "Select the type of the forwarder."_i18n
         );
     }
@@ -292,6 +302,11 @@ void DevoptabForm::SetupButtons(bool type_change) {
 } // namespace
 
 void DisplayDevoptabSideBar() {
+    if (sizeof(TYPE_ENTRIES) == 0) {
+        App::Notify("No mount protocols are enabled in this build."_i18n);
+        return;
+    }
+
     auto options = std::make_unique<Sidebar>("Devoptab Options"_i18n, Sidebar::Side::LEFT);
     ON_SCOPE_EXIT(App::Push(std::move(options)));
 
