@@ -1889,16 +1889,41 @@ void DeleteMetaEntries(u64 app_id, int image, const std::string& name, const tit
     });
 }
 
-auto BuildNspPath(const Entry& e, std::string_view export_name, const NsApplicationContentMetaStatus& status, bool to_nsz) -> fs::FsPath {
+// reads the display version from the control nca of an update.
+// this uses the exact key and content id that were found when building the entry,
+// the same as the content list does, so it also works for updates that are only on the game card.
+bool GetPatchDisplayVersion(const ContentInfoEntry& info, char* out, s64 size) {
+    const auto it = std::ranges::find_if(info.content_infos, [](const NcmContentInfo& c){
+        return c.content_type == NcmContentType_Control;
+    });
+
+    if (it == info.content_infos.end()) {
+        log_write("[nsp] no control nca for update: %016lX\n", info.status.application_id);
+        return false;
+    }
+
+    u64 program_id;
+    fs::FsPath path;
+    auto rc = ncm::GetFsPathFromContentId(&title::GetNcmCs(info.status.storageID), info.key, it->content_id, &program_id, &path);
+    if (R_SUCCEEDED(rc)) {
+        rc = nca::ParseControl(path, program_id, out, size, nullptr, offsetof(NacpStruct, display_version));
+    }
+
+    if (R_FAILED(rc)) {
+        log_write("[nsp] failed to read display version for update: %016lX storage: %u rc: 0x%X\n", info.status.application_id, info.status.storageID, rc);
+        return false;
+    }
+
+    return true;
+}
+
+auto BuildNspPath(const Entry& e, std::string_view export_name, const ContentInfoEntry& info, bool to_nsz) -> fs::FsPath {
+    const auto& status = info.status;
     char version[sizeof(NacpStruct::display_version) + 1]{};
     if (status.meta_type == NcmContentMetaType_Patch) {
-        u64 program_id;
-        fs::FsPath path;
-        if (R_SUCCEEDED(title::GetControlPathFromStatus(status, &program_id, &path))) {
-            char display_version[0x10];
-            if (R_SUCCEEDED(nca::ParseControl(path, program_id, display_version, sizeof(display_version), nullptr, offsetof(NacpStruct, display_version)))) {
-                std::snprintf(version, sizeof(version), "%s ", display_version);
-            }
+        char display_version[0x10];
+        if (GetPatchDisplayVersion(info, display_version, sizeof(display_version))) {
+            std::snprintf(version, sizeof(version), "%s ", display_version);
         }
     }
 
@@ -1957,12 +1982,13 @@ Result BuildContentEntry(const NsApplicationContentMetaStatus& status, ContentIn
     // append cnmt at the end of the list, following StandardNSP spec.
     out.content_infos.insert_range(out.content_infos.end(), cnmt_infos);
     out.status = status;
+    out.key = meta.key;
     R_SUCCEED();
 }
 
 Result BuildNspEntry(const Entry& e, std::string_view export_name, const ContentInfoEntry& info, const keys::Keys& keys, NspEntry& out, bool to_nsz) {
     out.application_name = e.GetName();
-    out.path = BuildNspPath(e, export_name, info.status, to_nsz);
+    out.path = BuildNspPath(e, export_name, info, to_nsz);
     s64 offset{};
 
     for (auto& e : info.content_infos) {
