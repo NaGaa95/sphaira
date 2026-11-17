@@ -15,6 +15,25 @@ namespace {
 
 constexpr std::size_t HISTORY_LIMIT = 32;
 
+// layout of the text list.
+constexpr float LIST_X = 50.f;
+constexpr float LIST_Y = 96.f;
+constexpr float LIST_W = 1180.f;
+constexpr float ROW_H = 30.f;
+constexpr s64 PAGE_ROWS = 17;
+constexpr float LIST_H = ROW_H * static_cast<float>(PAGE_ROWS);
+constexpr float SCROLLBAR_X = LIST_X + LIST_W + 4.f;
+
+// a row is a right aligned line number, a separator, then the text itself.
+constexpr float GUTTER_W = 66.f;
+constexpr float NUMBER_RIGHT = GUTTER_W - 12.f;
+constexpr float SEPARATOR_X = GUTTER_W - 6.f;
+constexpr float TEXT_X = GUTTER_W;
+constexpr float TEXT_PAD_RIGHT = 10.f;
+
+constexpr float FONT_SIZE = 20.f;
+constexpr float NUMBER_SIZE = 17.f;
+
 } // namespace
 
 Menu::Menu(fs::Fs* fs, const fs::FsPath& path)
@@ -63,10 +82,10 @@ Menu::Menu(fs::Fs* fs, const fs::FsPath& path)
         m_lines.emplace_back();
     }
 
-    const Vec4 list_pos{45.f, 100.f, 1180.f, 530.f};
-    const Vec4 item_pos{55.f, 105.f, 1150.f, 58.f};
-    m_list = std::make_unique<List>(1, 9, list_pos, item_pos, Vec2{0.f, 1.f});
-    m_list->SetScrollBarPos(1222.f, 110.f, 510.f);
+    const Vec4 list_pos{LIST_X, LIST_Y, LIST_W, LIST_H};
+    const Vec4 item_pos{LIST_X, LIST_Y, LIST_W, ROW_H};
+    m_list = std::make_unique<List>(1, PAGE_ROWS, list_pos, item_pos, Vec2{0.f, 0.f});
+    m_list->SetScrollBarPos(SCROLLBAR_X, LIST_Y, LIST_H);
     UpdateStatus();
 }
 
@@ -90,21 +109,23 @@ void Menu::Draw(NVGcontext* vg, Theme* theme) {
 
     m_list->Draw(vg, theme, m_lines.size(), [this](auto* vg, auto* theme, const Vec4& pos, s64 index){
         const bool selected = m_index == index;
+        const auto info_colour = theme->GetColour(ThemeEntryID_TEXT_INFO);
+        const auto colour = theme->GetColour(selected ? ThemeEntryID_TEXT_SELECTED : ThemeEntryID_TEXT);
+
         if (selected) {
             gfx::drawRect(vg, pos, theme->GetColour(ThemeEntryID_GRID));
-            gfx::drawRectOutline(vg, theme, 4.f, pos);
         } else {
             gfx::drawRect(vg, pos.x, pos.y + pos.h, pos.w, 1.f, theme->GetColour(ThemeEntryID_LINE_SEPARATOR));
         }
 
-        const auto colour = theme->GetColour(selected ? ThemeEntryID_TEXT_SELECTED : ThemeEntryID_TEXT);
-        gfx::drawTextArgs(vg, pos.x + 68.f, pos.y + pos.h / 2.f, 17.f,
-            NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_INFO), "%ld", index + 1);
-        gfx::drawRect(vg, pos.x + 82.f, pos.y + 10.f, 1.f, pos.h - 20.f, theme->GetColour(ThemeEntryID_LINE_SEPARATOR));
+        gfx::drawTextArgs(vg, pos.x + NUMBER_RIGHT, pos.y + pos.h / 2.f, NUMBER_SIZE,
+            NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE, selected ? colour : info_colour, "%ld", index + 1);
+        gfx::drawRect(vg, pos.x + SEPARATOR_X, pos.y + 6.f, 1.f, pos.h - 12.f,
+            theme->GetColour(ThemeEntryID_LINE_SEPARATOR));
 
         const auto& line = m_lines[index];
-        m_scrolling_text.Draw(vg, selected, pos.x + 100.f, pos.y + pos.h / 2.f,
-            pos.w - 120.f, 19.f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE, colour,
+        m_scrolling_text.Draw(vg, selected, pos.x + TEXT_X, pos.y + pos.h / 2.f,
+            pos.w - TEXT_X - TEXT_PAD_RIGHT, FONT_SIZE, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE, colour,
             line.empty() ? std::string{" "} : line);
     });
 }
