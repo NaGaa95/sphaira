@@ -57,7 +57,7 @@ For informantion about the install options, [see the wiki](https://github.com/IT
 
 ### Usb (install)
 
-The USB protocol is the same as tinfoil, so tools such as [ns-usbloader](https://github.com/developersu/ns-usbloader) and [fluffy](https://github.com/fourminute/Fluffy) should work with sphaira. You may also use the provided python script found [here](tools/usb_install_pc.py).
+Sphaira uses its own USB protocol, not the tinfoil one (since 1.0.0), so tools that only support the tinfoil protocol, such as [ns-usbloader](https://github.com/developersu/ns-usbloader) and [fluffy](https://github.com/fourminute/Fluffy), do not work with it. Use the provided python script found [here](tools/usb_install.py). Install its requirements with `pip install -r tools/requirements.txt`, then run `python tools/usb_install.py game.nsp` while the USB install menu is open on the Switch.
 
 ### Ftp (install)
 
