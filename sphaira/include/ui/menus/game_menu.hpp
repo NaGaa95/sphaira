@@ -244,11 +244,12 @@ private:
 
 struct ContentInfoEntry {
     NsApplicationContentMetaStatus status{};
+    NcmContentMetaKey key{};
     std::vector<NcmContentInfo> content_infos{};
     std::vector<NcmRightsId> ncm_rights_id{};
 };
 
-auto BuildNspPath(const Entry& e, std::string_view export_name, const NsApplicationContentMetaStatus& status, bool to_nsz = false) -> fs::FsPath;
+auto BuildNspPath(const Entry& e, std::string_view export_name, const ContentInfoEntry& info, bool to_nsz = false) -> fs::FsPath;
 Result BuildContentEntry(const NsApplicationContentMetaStatus& status, ContentInfoEntry& out, bool to_nsz = false);
 Result BuildNspEntry(const Entry& e, std::string_view export_name, const ContentInfoEntry& info, const keys::Keys& keys, NspEntry& out, bool to_nsz = false);
 Result BuildNspEntries(Entry& e, const title::MetaEntries& meta_entries, std::vector<NspEntry>& out, bool to_nsz = false);
