@@ -294,6 +294,7 @@ FetchContent_Declare(nvjpg
 FetchContent_Declare(dr_libs
     GIT_REPOSITORY https://github.com/mackron/dr_libs.git
     GIT_TAG b962384
+    GIT_SUBMODULES ""
     SOURCE_SUBDIR NONE
 )
 
@@ -413,7 +414,8 @@ if (ENABLE_FTPSRV)
         GIT_REPOSITORY https://github.com/ITotalJustice/ftpsrv.git
         GIT_TAG 7c82402
         SOURCE_SUBDIR NONE
-        PATCH_COMMAND "${GIT_EXECUTABLE}" apply --ignore-whitespace "${CMAKE_SOURCE_DIR}/cmake/patches/ftpsrv-upload-callback.patch"
+        PATCH_COMMAND "${GIT_EXECUTABLE}" checkout -- .
+        COMMAND "${GIT_EXECUTABLE}" apply --ignore-whitespace "${CMAKE_SOURCE_DIR}/cmake/patches/ftpsrv-upload-callback.patch"
     )
 
     FetchContent_MakeAvailable(ftpsrv)
