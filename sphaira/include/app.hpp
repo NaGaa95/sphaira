@@ -265,7 +265,7 @@ public:
     static constexpr inline auto PLAYLOG_PATH = "/config/sphaira/playlog.ini";
     static constexpr inline auto INI_SECTION = "config";
     static constexpr inline auto DEFAULT_THEME_PATH = "romfs:/themes/default_theme.ini";
-    static constexpr inline auto DEFAULT_RIGHT_MENU = platform::SupportsAppstore ? "Appstore" : "Saves";
+    static constexpr inline auto DEFAULT_RIGHT_MENU = "Appstore";
 
     fs::FsPath m_app_path;
     u64 m_start_timestamp{};

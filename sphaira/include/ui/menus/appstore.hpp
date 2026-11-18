@@ -77,6 +77,14 @@ struct Entry {
     std::string store_base{};
     u64 store_id{};
 
+    // a brewstore package (the Switch 2 store): a GitHub or GitLab release
+    // asset, a .nro or a zip, installed into target.
+    bool release_asset{};
+    std::string release{}; // "latest" or a tag
+    std::string asset{}; // optional, how the asset's name ends
+    std::string target{}; // optional, /switch/<name> otherwise
+    u64 published{}; // unix time of the release
+
     LazyImage image{};
     u32 updated_num{};
     EntryStatus status{EntryStatus::Get};
@@ -202,6 +210,8 @@ private:
     void DeleteActiveStore();
     void SwitchStore(s64 index);
     void StartStoreDownload();
+    void DownloadCatalogIncludes(u64 generation, const fs::FsPath& store_cache, const std::vector<std::string>& urls);
+    void OnCatalogReady();
 
 private:
     static constexpr inline const char* INI_SECTION = "appstore";

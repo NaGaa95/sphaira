@@ -29,8 +29,6 @@ inline constexpr bool SupportsUsbInstall = !IsSwitch2;
 inline constexpr bool SupportsIrs = !IsSwitch2;
 // themezer themes are for the Switch 1 home menu.
 inline constexpr bool SupportsThemezer = !IsSwitch2;
-// the appstore only lists Switch 1 homebrew.
-inline constexpr bool SupportsAppstore = !IsSwitch2;
 // emummc and exosphère configs, and atmosphère's folders. svcCallSecureMonitor
 // ends the process on Switch 2.
 inline constexpr bool HasAtmosphere = !IsSwitch2;

@@ -43,8 +43,15 @@ constexpr auto STORE_CONFIG_SECTION = "STORE";
 constexpr auto STORE_CONFIG_SECTION_LEGACY = "appstore";
 constexpr auto OFFICIAL_STORE_NAME = "HB App Store";
 constexpr auto OFFICIAL_STORE_URL = "https://switch.cdn.fortheusers.org";
+// the store the menu starts with: the HB App Store lists Switch 1 homebrew,
+// brewstore's catalog Switch 2 homebrew.
+constexpr auto BREWSTORE_NAME = "Brewstore";
+constexpr auto BREWSTORE_URL = "https://raw.githubusercontent.com/HerXayah/brewstore-repo/main/packages.json";
+constexpr auto BUILTIN_STORE_NAME = platform::IsSwitch2 ? BREWSTORE_NAME : OFFICIAL_STORE_NAME;
+constexpr auto BUILTIN_STORE_URL = platform::IsSwitch2 ? BREWSTORE_URL : OFFICIAL_STORE_URL;
 constexpr std::size_t MAX_STORE_SOURCES = 32;
 constexpr std::size_t MAX_STORE_PACKAGES = 20000;
+constexpr std::size_t MAX_CATALOG_INCLUDES = 512;
 constexpr auto URL_POST_FEEDBACK = "http://switchbru.com/appstore/feedback";
 constexpr auto URL_GET_FEEDACK = "http://switchbru.com/appstore/feedback";
 
@@ -100,6 +107,14 @@ auto IsRemoteUrl(std::string_view value) -> bool {
     return value.starts_with("https://") || value.starts_with("http://");
 }
 
+auto StartsWithCi(std::string_view value, std::string_view prefix) -> bool {
+    return value.size() >= prefix.size() && !strncasecmp(value.data(), prefix.data(), prefix.size());
+}
+
+auto EndsWithCi(std::string_view value, std::string_view suffix) -> bool {
+    return value.size() >= suffix.size() && !strncasecmp(value.data() + value.size() - suffix.size(), suffix.data(), suffix.size());
+}
+
 auto TrimStoreUrl(std::string value) -> std::string {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
         value.pop_back();
@@ -136,6 +151,52 @@ auto BuildRepoUrl(const StoreSource& source) -> std::string {
         return url;
     }
     return url + "/repo.json";
+}
+
+auto StoreCachePath(u64 store_id) -> fs::FsPath {
+    fs::FsPath out;
+    std::snprintf(out, sizeof(out), "%s/stores/%016llx", CACHE_PATH.s, static_cast<unsigned long long>(store_id));
+    return out;
+}
+
+auto IncludeCachePath(const fs::FsPath& store_cache, std::string_view url) -> fs::FsPath {
+    fs::FsPath out;
+    std::snprintf(out, sizeof(out), "%s/includes/%016llx.json", store_cache.s, static_cast<unsigned long long>(HashStore(url)));
+    return out;
+}
+
+// a brewstore catalog is {"include": [links]}, each link a manifest with a
+// "packages" array. relative links are resolved beside the catalog.
+auto ReadCatalogIncludes(const fs::FsPath& path, std::string_view catalog_url, std::vector<std::string>& out) -> bool {
+    auto document = yyjson_read_file(path, YYJSON_READ_NOFLAG, nullptr, nullptr);
+    R_UNLESS(document, false);
+    ON_SCOPE_EXIT(yyjson_doc_free(document));
+
+    const auto root = yyjson_doc_get_root(document);
+    const auto include = root && yyjson_is_obj(root) ? yyjson_obj_get(root, "include") : nullptr;
+    R_UNLESS(include && yyjson_is_arr(include), false);
+
+    const auto base = StoreBaseUrl(std::string{catalog_url});
+    out.clear();
+    size_t index{}, max{};
+    yyjson_val* link{};
+    yyjson_arr_foreach(include, index, max, link) {
+        const auto value = yyjson_get_str(link);
+        if (!value || !value[0] || out.size() >= MAX_CATALOG_INCLUDES) {
+            continue;
+        }
+
+        std::string_view url{value};
+        if (IsRemoteUrl(url)) {
+            out.emplace_back(url);
+        } else {
+            while (url.starts_with("./") || url.starts_with('/')) {
+                url.remove_prefix(url.front() == '.' ? 2 : 1);
+            }
+            out.emplace_back(base + "/" + std::string{url});
+        }
+    }
+    return true;
 }
 
 auto ResolveResourceUrl(const Entry& entry, std::string_view resource, std::string_view fallback) -> std::string {
@@ -243,6 +304,29 @@ void from_json(yyjson_val* json, Entry& e) {
         JSON_SET_STR(download_url);
         JSON_SET_STR(zip_url);
         JSON_SET_STR(resource_url);
+        JSON_SET_STR(release);
+        JSON_SET_STR(asset);
+        JSON_SET_STR(target);
+        JSON_SET_UINT(published);
+
+        // brewstore's names for the icon and for the file an install leaves,
+        // the app's .nro for most.
+        case cexprHash("icon"): {
+            if (yyjson_is_str(val)) {
+                e.icon_url = yyjson_get_str(val);
+            }
+        } break;
+        case cexprHash("marker"): {
+            if (yyjson_is_str(val)) {
+                std::string_view marker{yyjson_get_str(val)};
+                if (marker.starts_with("sdmc:")) {
+                    marker.remove_prefix(5);
+                }
+                if (marker.starts_with('/') && EndsWithCi(marker, ".nro")) {
+                    e.binary = marker;
+                }
+            }
+        } break;
     );
 }
 
@@ -511,6 +595,28 @@ auto UninstallApp(ProgressBox* pbox, const Entry& entry) -> Result {
         }
     }
 
+    // the folders a release asset filled, once empty, deepest first. only
+    // under /switch: the app's own folders.
+    if (entry.release_asset) {
+        std::vector<std::string> folders;
+        for (const auto& e : manifest) {
+            std::string_view folder{e.path.s};
+            for (auto slash = folder.rfind('/'); slash != std::string_view::npos; slash = folder.rfind('/')) {
+                folder = folder.substr(0, slash);
+                if (!StartsWithCi(folder, "switch/")) {
+                    break;
+                }
+                folders.emplace_back(folder);
+            }
+        }
+        std::ranges::sort(folders);
+        folders.erase(std::ranges::unique(folders).begin(), folders.end());
+        std::ranges::stable_sort(folders, [](const auto& a, const auto& b){ return a.size() > b.size(); });
+        for (const auto& folder : folders) {
+            fs.DeleteDirectory(fs::AppendPath("/", folder));
+        }
+    }
+
     // remove directory, this will also delete manifest and info
     const auto dir = BuildPackageCachePath(entry);
     pbox->NewTransfer(i18n::Reorder("Removing ", dir.toString()));
@@ -737,6 +843,344 @@ auto FindCaseInsensitive(std::string_view base, std::string_view term) -> bool {
     return it != base.cend();
 }
 
+// the .nro an install left, to launch it: the least nested one, the app
+// rather than, say, RetroArch's cores.
+auto FindInstalledNro(const Entry& e) -> std::string {
+    const auto manifest = LoadAndParseManifest(e);
+    std::string_view nro;
+    for (const auto& file : manifest) {
+        const std::string_view path{file.path.s};
+        if (EndsWithCi(path, ".nro") && (nro.empty() || std::ranges::count(path, '/') < std::ranges::count(nro, '/'))) {
+            nro = path;
+        }
+    }
+    return nro.empty() ? std::string{} : fs::AppendPath("/", nro).toString();
+}
+
+struct ReleaseAsset {
+    std::string name;
+    std::string url;
+    std::string sha256; // GitHub lists it, GitLab doesn't
+};
+
+// as brewstore picks it: the asset whose name ends like the package's asset,
+// or else the first .nro, or else the first zip that isn't debug symbols or
+// sources.
+auto PickReleaseAsset(const Entry& e, const std::vector<ReleaseAsset>& assets) -> const ReleaseAsset* {
+    const ReleaseAsset* zip{};
+    for (const auto& asset : assets) {
+        if (!e.asset.empty()) {
+            if (EndsWithCi(asset.name, e.asset)) {
+                return &asset;
+            }
+        } else if (EndsWithCi(asset.name, ".nro")) {
+            return &asset;
+        } else if (!zip && EndsWithCi(asset.name, ".zip") && !FindCaseInsensitive(asset.name, "debug") &&
+                   !FindCaseInsensitive(asset.name, "symbols") && !FindCaseInsensitive(asset.name, "source")) {
+            zip = &asset;
+        }
+    }
+    return zip;
+}
+
+// the releases API of https://github.com/<owner>/<repo> or of
+// https://gitlab.com/<group>/<project>, newest release first.
+auto ReleasesApiUrl(std::string_view url, std::string& out, bool& gitlab) -> bool {
+    while (url.ends_with('/')) {
+        url.remove_suffix(1);
+    }
+    if (url.ends_with(".git")) {
+        url.remove_suffix(4);
+    }
+
+    constexpr std::string_view github_prefix{"https://github.com/"};
+    constexpr std::string_view gitlab_prefix{"https://gitlab.com/"};
+    gitlab = url.starts_with(gitlab_prefix);
+    if (!gitlab && !url.starts_with(github_prefix)) {
+        return false;
+    }
+
+    const auto path = url.substr(gitlab ? gitlab_prefix.size() : github_prefix.size());
+    if (path.empty() || !IsSafeManifestPath(path) || path.find('/') == std::string_view::npos ||
+        (!gitlab && path.find('/') != path.rfind('/'))) {
+        return false;
+    }
+    if (!std::ranges::all_of(path, [](char c){ return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '/'; })) {
+        return false;
+    }
+
+    if (gitlab) {
+        std::string project;
+        for (const auto c : path) {
+            project += c == '/' ? std::string{"%2F"} : std::string{c};
+        }
+        out = "https://gitlab.com/api/v4/projects/" + project + "/releases?per_page=10";
+    } else {
+        out = "https://api.github.com/repos/" + std::string{path} + "/releases?per_page=10";
+    }
+    return true;
+}
+
+auto ResolveReleaseAsset(const Entry& e, ReleaseAsset& out) -> Result {
+    std::string api;
+    bool gitlab{};
+    R_UNLESS(ReleasesApiUrl(e.url, api, gitlab), Result_AppstoreNoReleaseAsset);
+
+    const auto result = curl::Api().ToMemory(
+        curl::Url{api},
+        curl::Header{
+            { "Accept", gitlab ? "application/json" : "application/vnd.github+json" },
+        }
+    );
+    R_UNLESS(result.success, Result_AppstoreFailedZipDownload);
+
+    auto document = yyjson_read(reinterpret_cast<const char*>(result.data.data()), result.data.size(), YYJSON_READ_NOFLAG);
+    R_UNLESS(document, Result_AppstoreNoReleaseAsset);
+    ON_SCOPE_EXIT(yyjson_doc_free(document));
+
+    const auto releases = yyjson_doc_get_root(document);
+    R_UNLESS(releases && yyjson_is_arr(releases), Result_AppstoreNoReleaseAsset);
+
+    // each release's assets, newest release first.
+    std::vector<std::vector<ReleaseAsset>> release_assets;
+    size_t index{}, max{};
+    yyjson_val* release{};
+    yyjson_arr_foreach(releases, index, max, release) {
+        const auto tag = yyjson_get_str(yyjson_obj_get(release, "tag_name"));
+        if (e.release != "latest" && (!tag || e.release != tag)) {
+            continue;
+        }
+
+        // GitHub: assets[].browser_download_url, GitLab: assets.links[].url.
+        auto list = yyjson_obj_get(release, "assets");
+        if (gitlab) {
+            list = yyjson_obj_get(list, "links");
+        }
+
+        auto& assets = release_assets.emplace_back();
+        size_t asset_index{}, asset_max{};
+        yyjson_val* asset{};
+        yyjson_arr_foreach(list, asset_index, asset_max, asset) {
+            const auto name = yyjson_get_str(yyjson_obj_get(asset, "name"));
+            auto link = yyjson_get_str(yyjson_obj_get(asset, gitlab ? "direct_asset_url" : "browser_download_url"));
+            if (!link && gitlab) {
+                link = yyjson_get_str(yyjson_obj_get(asset, "url"));
+            }
+            if (!name || !link || !IsSafePackageName(name) || !std::string_view{link}.starts_with("https://")) {
+                continue;
+            }
+
+            const auto digest_str = yyjson_get_str(yyjson_obj_get(asset, "digest"));
+            std::string_view digest{digest_str ? digest_str : ""};
+            if (digest.starts_with("sha256:")) {
+                digest.remove_prefix(7);
+            }
+            assets.emplace_back(name, link, std::string{digest});
+        }
+    }
+
+    // the asset the catalog lists, even when a newer release came out since:
+    // the store shows that version, and offers the next one once the catalog
+    // has it.
+    if (e.sha256.size() == 64) {
+        for (const auto& assets : release_assets) {
+            for (const auto& asset : assets) {
+                if (!strcasecmp(asset.sha256.c_str(), e.sha256.c_str())) {
+                    out = asset;
+                    R_SUCCEED();
+                }
+            }
+        }
+    }
+
+    for (const auto& assets : release_assets) {
+        if (const auto picked = PickReleaseAsset(e, assets)) {
+            out = *picked;
+            R_SUCCEED();
+        }
+    }
+
+    R_THROW(Result_AppstoreNoReleaseAsset);
+}
+
+auto ReadZipNames(const fs::FsPath& path, std::vector<std::string>& out) -> Result {
+    zlib_filefunc64_def file_func;
+    mz::FileFuncStdio(&file_func);
+    auto zfile = unzOpen2_64(path, &file_func);
+    R_UNLESS(zfile, Result_UnzOpen2_64);
+    ON_SCOPE_EXIT(unzClose(zfile));
+
+    for (auto rc = unzGoToFirstFile(zfile); rc == UNZ_OK; rc = unzGoToNextFile(zfile)) {
+        fs::FsPath name;
+        R_UNLESS(UNZ_OK == unzGetCurrentFileInfo64(zfile, nullptr, name, sizeof(name), nullptr, 0, nullptr, 0), Result_UnzGetCurrentFileInfo64);
+        out.emplace_back(name.s);
+    }
+    R_SUCCEED();
+}
+
+// how a release zip is laid out. one folder holding everything is dropped,
+// as brewstore does. a zip with a switch folder mirrors the sd card: that
+// folder goes to the sd card's root, and loose files (readmes) are left out.
+struct ZipLayout {
+    std::string strip;
+    bool sd_root{};
+};
+
+auto GetZipLayout(const std::vector<std::string>& names) -> ZipLayout {
+    ZipLayout layout;
+
+    std::string_view root;
+    for (const std::string_view name : names) {
+        const auto slash = name.find('/');
+        if (slash == std::string_view::npos || !slash || (!root.empty() && name.substr(0, slash) != root)) {
+            root = {};
+            break;
+        }
+        root = name.substr(0, slash);
+    }
+    if (!root.empty() && !(root.size() == 6 && StartsWithCi(root, "switch"))) {
+        layout.strip = std::string{root} + "/";
+    }
+
+    layout.sd_root = std::ranges::any_of(names, [&layout](std::string_view name){
+        return StartsWithCi(name.substr(std::min(layout.strip.size(), name.size())), "switch/");
+    });
+    return layout;
+}
+
+// where a brewstore package goes: its target, /switch/<name> otherwise.
+auto ReleaseTarget(const Entry& e, fs::FsPath& out) -> bool {
+    if (e.target.empty()) {
+        out = fs::AppendPath("/switch", e.name);
+        return true;
+    }
+
+    std::string_view target{e.target};
+    if (target.starts_with("sdmc:")) {
+        target.remove_prefix(5);
+    }
+    while (target.size() > 1 && target.ends_with('/')) {
+        target.remove_suffix(1);
+    }
+    if (target != "/" && (!target.starts_with('/') || !IsSafeManifestPath(target))) {
+        return false;
+    }
+
+    out = target;
+    return true;
+}
+
+// a brewstore package is a release asset rather than an HB App Store zip: a
+// .nro put in its folder, or a zip extracted there. its files are listed in
+// manifest.install and its version in info.json, as for the HB App Store, so
+// updating and removing it work the same.
+auto InstallReleaseApp(ProgressBox* pbox, const Entry& entry) -> Result {
+    static const fs::FsPath asset_out{"/switch/sphaira/cache/appstore/temp.asset"};
+
+    fs::FsNativeSd fs;
+    R_TRY(fs.GetFsOpenResult());
+
+    fs::FsPath target;
+    R_UNLESS(ReleaseTarget(entry, target), Result_AppstoreFailedParseManifest);
+
+    pbox->NewTransfer("Downloading json"_i18n);
+    ReleaseAsset asset;
+    R_TRY(ResolveReleaseAsset(entry, asset));
+    R_TRY(pbox->ShouldExitResult());
+
+    // the sd card's root only takes a zip, as in brewstore.
+    const auto zip = EndsWithCi(asset.name, ".zip");
+    R_UNLESS(zip || std::strcmp(target, "/"), Result_AppstoreFailedParseManifest);
+
+    fs.DeleteFile(asset_out);
+    ON_SCOPE_EXIT(fs.DeleteFile(asset_out));
+
+    pbox->NewTransfer(i18n::Reorder("Downloading ", entry.title));
+    const auto download = curl::Api().ToFile(
+        curl::Url{asset.url},
+        curl::Path{asset_out},
+        curl::OnProgress{pbox->OnDownloadProgressCallback()}
+    );
+    R_UNLESS(download.success, Result_AppstoreFailedZipDownload);
+    R_TRY(pbox->ShouldExitResult());
+
+    // the catalog's sha256 is the asset's.
+    if (entry.sha256.size() == 64) {
+        pbox->NewTransfer("Checking SHA-256"_i18n);
+        std::string hash;
+        R_TRY(hash::Hash(pbox, hash::Type::Sha256, &fs, asset_out, hash));
+        R_UNLESS(!strcasecmp(hash.c_str(), entry.sha256.c_str()), Result_AppstoreFailedMd5);
+    }
+
+    // the files, from the sd card's root, as manifest.install lists them.
+    std::vector<std::string> files;
+    if (zip) {
+        // a zip for the sd card's root is extracted as it is.
+        ZipLayout layout;
+        if (std::strcmp(target, "/")) {
+            std::vector<std::string> names;
+            R_TRY(ReadZipNames(asset_out, names));
+            layout = GetZipLayout(names);
+        }
+        const fs::FsPath base = layout.sd_root ? "/" : target.s;
+
+        R_TRY(thread::TransferUnzipAll(pbox, asset_out, &fs, base, [&](const fs::FsPath& name, fs::FsPath& path) -> bool {
+            std::string_view file{name.s};
+            if (!file.starts_with(layout.strip)) {
+                return false;
+            }
+            file.remove_prefix(layout.strip.size());
+            if ((layout.sd_root && !StartsWithCi(file, "switch/")) || !IsSafeManifestPath(file)) {
+                return false;
+            }
+
+            path = fs::AppendPath(base, file);
+            if (!file.ends_with('/')) {
+                files.emplace_back(path.s + 1);
+            }
+            return true;
+        }));
+    } else {
+        const auto path = fs::AppendPath(target, asset.name);
+        fs.CreateDirectoryRecursively(target);
+        fs.DeleteFile(path);
+        R_TRY(fs.RenameFile(asset_out, path));
+        files.emplace_back(path.s + 1);
+    }
+    R_UNLESS(!files.empty(), Result_AppstoreFailedParseManifest);
+
+    // what the previous version had and this one doesn't.
+    for (const auto& old_file : LoadAndParseManifest(entry)) {
+        if (std::ranges::none_of(files, [&old_file](const auto& file){ return !strcasecmp(file.c_str(), old_file.path); })) {
+            fs.DeleteFile(fs::AppendPath("/", old_file.path));
+        }
+    }
+
+    fs.CreateDirectoryRecursively(BuildPackageCachePath(entry));
+
+    std::string manifest;
+    for (const auto& file : files) {
+        manifest += "U: " + file + "\n";
+    }
+    R_TRY(fs.write_entire_file(BuildManifestCachePath(entry), {reinterpret_cast<const u8*>(manifest.data()), manifest.size()}));
+
+    auto info = yyjson_mut_doc_new(nullptr);
+    R_UNLESS(info, Result_AppstoreFailedParseManifest);
+    ON_SCOPE_EXIT(yyjson_mut_doc_free(info));
+    const auto root = yyjson_mut_obj(info);
+    yyjson_mut_doc_set_root(info, root);
+    yyjson_mut_obj_add_strcpy(info, root, "version", entry.version.c_str());
+
+    size_t info_size{};
+    const auto info_json = yyjson_mut_write(info, YYJSON_WRITE_NOFLAG, &info_size);
+    R_UNLESS(info_json, Result_AppstoreFailedParseManifest);
+    ON_SCOPE_EXIT(std::free(info_json));
+    R_TRY(fs.write_entire_file(BuildInfoCachePath(entry), {reinterpret_cast<const u8*>(info_json), info_size}));
+
+    log_write("[APPSTORE] installed %s from %s\n", entry.name.c_str(), asset.name.c_str());
+    R_SUCCEED();
+}
+
 } // namespace
 
 EntryMenu::EntryMenu(Entry& entry, const LazyImage& default_icon, Menu& menu)
@@ -766,30 +1210,33 @@ EntryMenu::EntryMenu(Entry& entry, const LazyImage& default_icon, Menu& menu)
                 SetPop();
             }, true);
 
-            options->Add<SidebarEntryCallback>("Leave Feedback"_i18n, [this](){
-                std::string out;
-                std::string header = "Leave feedback for " + m_entry.title;
-                if (R_SUCCEEDED(swkbd::ShowText(out, header.c_str())) && !out.empty()) {
-                    const auto post = "name=" "switch_user" "&package=" + m_entry.name + "&message=" + out;
-                    const auto file = BuildFeedbackCachePath(m_entry);
+            // the feedback goes to the HB App Store's server.
+            if (!m_entry.release_asset) {
+                options->Add<SidebarEntryCallback>("Leave Feedback"_i18n, [this](){
+                    std::string out;
+                    std::string header = "Leave feedback for " + m_entry.title;
+                    if (R_SUCCEEDED(swkbd::ShowText(out, header.c_str())) && !out.empty()) {
+                        const auto post = "name=" "switch_user" "&package=" + m_entry.name + "&message=" + out;
+                        const auto file = BuildFeedbackCachePath(m_entry);
 
-                    curl::Api().ToAsync(
-                        curl::Url{URL_POST_FEEDBACK},
-                        curl::Path{file},
-                        curl::Fields{post},
-                        curl::StopToken{this->GetToken()},
-                        curl::OnComplete{[](auto& result){
-                            if (result.success) {
-                                log_write("got feedback!\n");
-                            } else {
-                                log_write("failed to send feedback :(");
+                        curl::Api().ToAsync(
+                            curl::Url{URL_POST_FEEDBACK},
+                            curl::Path{file},
+                            curl::Fields{post},
+                            curl::StopToken{this->GetToken()},
+                            curl::OnComplete{[](auto& result){
+                                if (result.success) {
+                                    log_write("got feedback!\n");
+                                } else {
+                                    log_write("failed to send feedback :(");
+                                }
                             }
-                        }
-                    });
-                }
-            }, true);
+                        });
+                    }
+                }, true);
+            }
 
-            if (App::IsApplication() && !m_entry.url.empty()) {
+            if (platform::SupportsWebApplet && App::IsApplication() && !m_entry.url.empty()) {
                 options->Add<SidebarEntryCallback>("Visit Website"_i18n, [this](){
                     WebShow(m_entry.url);
                 });
@@ -810,6 +1257,10 @@ EntryMenu::EntryMenu(Entry& entry, const LazyImage& default_icon, Menu& menu)
                     m_file_list_state = ImageDownloadState::Done;
                     data.push_back('\0');
                     m_manifest_list = std::make_unique<ScrollableText>((const char*)data.data(), 0, 374, 250, 768, 18);
+                } else if (m_entry.release_asset) {
+                    // a release asset's files are only known once installed.
+                    m_show_file_list = false;
+                    m_file_list_state = ImageDownloadState::None;
                 } else {
                     curl::Api().ToMemoryAsync(
                         curl::Url{BuildManifestUrl(m_entry)},
@@ -842,21 +1293,24 @@ EntryMenu::EntryMenu(Entry& entry, const LazyImage& default_icon, Menu& menu)
     m_banner.cached = EntryLoadImageFile(path, m_banner);
 
     // race condition if we pop the widget before the download completes
-    curl::Api().ToFileAsync(
-        curl::Url{url},
-        curl::Path{path},
-        curl::Flags{curl::Flag_Cache},
-        curl::StopToken{this->GetToken()},
-        curl::OnComplete{[this, path](auto& result){
-            if (result.success) {
-                if (result.code == 304) {
-                    m_banner.cached = false;
-                } else {
-                    EntryLoadImageFile(path, m_banner);
+    // brewstore packages have no banner.
+    if (!m_entry.release_asset || !m_entry.banner_url.empty()) {
+        curl::Api().ToFileAsync(
+            curl::Url{url},
+            curl::Path{path},
+            curl::Flags{curl::Flag_Cache},
+            curl::StopToken{this->GetToken()},
+            curl::OnComplete{[this, path](auto& result){
+                if (result.success) {
+                    if (result.code == 304) {
+                        m_banner.cached = false;
+                    } else {
+                        EntryLoadImageFile(path, m_banner);
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 
     SetSubHeading(m_entry.binary);
     SetSubHeading(m_entry.description);
@@ -969,13 +1423,16 @@ void EntryMenu::UpdateOptions() {
 
     const auto install = [this](){
         App::Push<ProgressBox>(m_entry.image.image, "Downloading "_i18n, m_entry.title, [this](auto pbox){
-            return InstallApp(pbox, m_entry);
+            return m_entry.release_asset ? InstallReleaseApp(pbox, m_entry) : InstallApp(pbox, m_entry);
         }, [this](Result rc){
             homebrew::SignalChange();
             App::PushErrorBox(rc, "Failed to install app"_i18n);
 
             if (R_SUCCEEDED(rc)) {
                 App::Notify(i18n::Reorder("Downloaded ", m_entry.title));
+                if (m_entry.release_asset && m_entry.binary.empty()) {
+                    m_entry.binary = FindInstalledNro(m_entry);
+                }
                 m_entry.status = EntryStatus::Installed;
                 m_menu.SetDirty();
                 UpdateOptions();
@@ -1168,7 +1625,7 @@ Menu::Menu(u32 flags) : grid::Menu{"AppStore"_i18n, flags} {
 
 void Menu::LoadStoreSources() {
     m_store_sources.clear();
-    m_store_sources.push_back({OFFICIAL_STORE_NAME, OFFICIAL_STORE_URL});
+    m_store_sources.push_back({BUILTIN_STORE_NAME, BUILTIN_STORE_URL});
 
     for (std::size_t i = 1; i < MAX_STORE_SOURCES; ++i) {
         char name_key[32]{};
@@ -1316,27 +1773,31 @@ void Menu::StartStoreDownload() {
     SetSubHeading("Loading store catalog..."_i18n);
 
     fs::FsNativeSd fs;
-    fs::FsPath store_cache;
-    std::snprintf(store_cache, sizeof(store_cache), "%s/stores/%016llx", CACHE_PATH.s, static_cast<unsigned long long>(store_id));
+    const auto store_cache = StoreCachePath(store_id);
     fs.CreateDirectoryRecursively(store_cache + "/icons");
     fs.CreateDirectoryRecursively(store_cache + "/banners");
+    fs.CreateDirectoryRecursively(store_cache + "/includes");
     m_repo_path = store_cache + "/repo.json";
+    const auto repo_url = BuildRepoUrl(source);
 
     const auto queued = curl::Api().ToFileAsync(
-        curl::Url{BuildRepoUrl(source)},
+        curl::Url{repo_url},
         curl::Path{m_repo_path},
         curl::Flags{curl::Flag_Cache},
         curl::StopToken{this->GetToken()},
-        curl::OnComplete{[this, generation](auto& result){
+        curl::OnComplete{[this, generation, repo_url, store_cache](auto& result){
             if (generation != m_store_generation) {
                 return;
             }
 
             const auto has_cache = fs::FsNativeSd().FileExists(m_repo_path);
             if (result.success || has_cache) {
-                m_repo_download_state = ImageDownloadState::Done;
-                if (HasFocus()) {
-                    ScanHomebrew();
+                // a brewstore catalog lists its manifests, they come next.
+                std::vector<std::string> includes;
+                if (ReadCatalogIncludes(m_repo_path, repo_url, includes)) {
+                    DownloadCatalogIncludes(generation, store_cache, includes);
+                } else {
+                    OnCatalogReady();
                 }
             } else {
                 m_repo_download_state = ImageDownloadState::Failed;
@@ -1348,6 +1809,39 @@ void Menu::StartStoreDownload() {
     if (!queued) {
         m_repo_download_state = ImageDownloadState::Failed;
         SetSubHeading("Failed to queue store download"_i18n);
+    }
+}
+
+// the manifests a brewstore catalog lists, each cached beside repo.json. one
+// that fails leaves its packages out (or uses the cached copy).
+void Menu::DownloadCatalogIncludes(u64 generation, const fs::FsPath& store_cache, const std::vector<std::string>& urls) {
+    auto remaining = std::make_shared<std::size_t>(urls.size());
+    for (const auto& url : urls) {
+        const auto queued = curl::Api().ToFileAsync(
+            curl::Url{url},
+            curl::Path{IncludeCachePath(store_cache, url)},
+            curl::Flags{curl::Flag_Cache},
+            curl::StopToken{this->GetToken()},
+            curl::OnComplete{[this, generation, remaining](auto&){
+                if (generation == m_store_generation && !--*remaining) {
+                    OnCatalogReady();
+                }
+            }}
+        );
+        if (!queued) {
+            --*remaining;
+        }
+    }
+
+    if (!*remaining) {
+        OnCatalogReady();
+    }
+}
+
+void Menu::OnCatalogReady() {
+    m_repo_download_state = ImageDownloadState::Done;
+    if (HasFocus()) {
+        ScanHomebrew();
     }
 }
 
@@ -1562,14 +2056,34 @@ void Menu::ScanHomebrew() {
     m_entries_index_search.clear();
     m_entries_current = {};
 
-    if (!from_json(m_repo_path, m_entries)) {
+    const auto& source = m_store_sources[m_active_store];
+    const auto store_base = StoreBaseUrl(source.url);
+    const auto store_id = HashStore(store_base);
+
+    // a brewstore catalog: its manifests' packages, all release assets.
+    std::vector<std::string> includes;
+    if (ReadCatalogIncludes(m_repo_path, BuildRepoUrl(source), includes)) {
+        const auto store_cache = StoreCachePath(store_id);
+        for (const auto& url : includes) {
+            std::vector<Entry> packages;
+            if (!from_json(IncludeCachePath(store_cache, url), packages)) {
+                continue;
+            }
+            for (auto& package : packages) {
+                if (package.release.empty()) {
+                    package.release = "latest";
+                }
+                if (m_entries.size() < MAX_STORE_PACKAGES) {
+                    m_entries.emplace_back(std::move(package));
+                }
+            }
+        }
+    } else if (!from_json(m_repo_path, m_entries)) {
         m_repo_download_state = ImageDownloadState::Failed;
         SetSubHeading("The selected store returned an invalid catalog"_i18n);
         return;
     }
 
-    const auto store_base = StoreBaseUrl(m_store_sources[m_active_store].url);
-    const auto store_id = HashStore(store_base);
     std::erase_if(m_entries, [](const Entry& entry){ return !IsSafePackageName(entry.name); });
     for (auto& entry : m_entries) {
         entry.store_base = store_base;
@@ -1579,6 +2093,22 @@ void Menu::ScanHomebrew() {
         }
         if (entry.author.empty()) {
             entry.author = "Unknown"_i18n;
+        }
+
+        entry.release_asset = !entry.release.empty();
+        if (entry.release_asset) {
+            if (entry.details.empty()) {
+                entry.details = entry.description;
+            }
+            if (entry.published) {
+                const auto published = static_cast<time_t>(entry.published);
+                struct tm date{};
+                if (gmtime_r(&published, &date)) {
+                    char updated[16];
+                    std::snprintf(updated, sizeof(updated), "%02d/%02d/%04d", date.tm_mday, date.tm_mon + 1, date.tm_year + 1900);
+                    entry.updated = updated;
+                }
+            }
         }
     }
 
@@ -1662,8 +2192,14 @@ void Menu::ScanHomebrew() {
             }
         }
 
-        e.image.state = ImageDownloadState::None;
-        e.image.image = 0; // images are lazy loaded
+        // the .nro an install of a release asset left, to launch it.
+        if (e.release_asset && e.binary.empty() && e.status != EntryStatus::Get) {
+            e.binary = FindInstalledNro(e);
+        }
+
+        // images are lazy loaded. most brewstore packages have no icon.
+        e.image.state = e.release_asset && e.icon_url.empty() ? ImageDownloadState::Failed : ImageDownloadState::None;
+        e.image.image = 0;
     }
 
     SetFilter();

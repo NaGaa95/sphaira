@@ -192,6 +192,7 @@ auto GetCodeMessage(Result rc) -> const char* {
         case Result_SaveInvalidArchiveLayout: return "SphairaError_SaveInvalidArchiveLayout";
         case Result_GcNoInitialData: return "SphairaError_GcNoInitialData";
         case Result_PlatformUnsupported: return "SphairaError_PlatformUnsupported";
+        case Result_AppstoreNoReleaseAsset: return "SphairaError_AppstoreNoReleaseAsset";
     }
 
     return "";

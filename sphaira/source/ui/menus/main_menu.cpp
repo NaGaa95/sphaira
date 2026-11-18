@@ -379,8 +379,6 @@ auto IsMenuSupported(const MiscMenuEntry& e) -> bool {
 
     if (e.IsInstall() && !platform::SupportsInstall) {
         return false;
-    } else if (name == "Appstore") {
-        return platform::SupportsAppstore;
     } else if (name == "Games" || name == "Storage") {
         return platform::SupportsGames;
     } else if (name == "Themezer") {

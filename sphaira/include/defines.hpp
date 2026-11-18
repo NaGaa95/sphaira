@@ -704,6 +704,7 @@ enum class SphairaResult : Result {
     GcNoInitialData,
     // not available on this platform, see platform.hpp.
     PlatformUnsupported,
+    AppstoreNoReleaseAsset,
 };
 
 #define MAKE_SPHAIRA_RESULT_ENUM(x) Result_##x =  MAKERESULT(Module_Sphaira, (Result)SphairaResult::x)
@@ -875,6 +876,7 @@ enum : Result {
     MAKE_SPHAIRA_RESULT_ENUM(SaveInvalidArchiveLayout),
     MAKE_SPHAIRA_RESULT_ENUM(GcNoInitialData),
     MAKE_SPHAIRA_RESULT_ENUM(PlatformUnsupported),
+    MAKE_SPHAIRA_RESULT_ENUM(AppstoreNoReleaseAsset),
 };
 
 #undef MAKE_SPHAIRA_RESULT_ENUM
