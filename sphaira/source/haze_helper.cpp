@@ -5,12 +5,14 @@
 #include "log.hpp"
 #include "evman.hpp"
 #include "i18n.hpp"
+#include "ui/menus/homebrew.hpp"
 
 #include <algorithm>
 #include <atomic>
 #include <haze.h>
 #include <limits>
 #include <map>
+#include <unordered_map>
 
 namespace sphaira::libhaze {
 namespace {
@@ -112,6 +114,19 @@ bool StartInstall(std::string path) {
     SCOPED_MUTEX(&g_shared_data.mutex);
     g_shared_data.in_progress = true;
     return true;
+}
+
+auto IsNro(const char* path) -> bool {
+    const auto length = std::strlen(path);
+    return length >= 4 && !strcasecmp(path + length - 4, ".nro");
+}
+
+// the homebrew menu rescans when an nro is written, deleted or renamed, as it
+// does over ftp. libhaze's callbacks come before the change is on the sd card,
+// so FsProxy signals once it is done.
+void SignalNroChange(const char* path) {
+    log_write("[MTP] homebrew change: %s\n", path);
+    ui::menu::homebrew::SignalChange();
 }
 
 struct FsProxyBase : haze::FileSystemProxyImpl {
@@ -299,12 +314,20 @@ struct FsProxy final : FsProxyBase {
 
     Result DeleteFile(const char* path) override {
         log_write("[HAZE] DeleteFile(%s)\n", path);
-        return m_fs->DeleteFile(FixPath(path));
+        R_TRY(m_fs->DeleteFile(FixPath(path)));
+        if (IsNro(path)) {
+            SignalNroChange(path);
+        }
+        R_SUCCEED();
     }
 
     Result RenameFile(const char *old_path, const char *new_path) override {
         log_write("[HAZE] RenameFile(%s -> %s)\n", old_path, new_path);
-        return m_fs->RenameFile(FixPath(old_path), FixPath(new_path));
+        R_TRY(m_fs->RenameFile(FixPath(old_path), FixPath(new_path)));
+        if (IsNro(old_path) || IsNro(new_path)) {
+            SignalNroChange(new_path);
+        }
+        R_SUCCEED();
     }
 
     Result OpenFile(const char *path, haze::FileOpenMode mode, haze::File *out_file) override {
@@ -323,6 +346,10 @@ struct FsProxy final : FsProxyBase {
             return rc;
         }
 
+        // signalled when closed, after libhaze's last write and truncate.
+        if (mode == haze::FileOpenMode_WRITE && IsNro(path)) {
+            m_nro_writes.emplace(f, path);
+        }
 
         out_file->impl = f;
         R_SUCCEED();
@@ -351,8 +378,12 @@ struct FsProxy final : FsProxyBase {
     void CloseFile(haze::File *file) override {
         auto f = static_cast<File*>(file->impl);
         if (f) {
+            const auto nro_write = m_nro_writes.extract(f);
             delete f;
             file->impl = nullptr;
+            if (nro_write) {
+                SignalNroChange(nro_write.mapped().c_str());
+            }
         }
     }
 
@@ -360,12 +391,17 @@ struct FsProxy final : FsProxyBase {
         return m_fs->CreateDirectory(FixPath(path));
     }
 
+    // a folder may hold nros.
     Result DeleteDirectoryRecursively(const char* path) override {
-        return m_fs->DeleteDirectoryRecursively(FixPath(path));
+        R_TRY(m_fs->DeleteDirectoryRecursively(FixPath(path)));
+        SignalNroChange(path);
+        R_SUCCEED();
     }
 
     Result RenameDirectory(const char *old_path, const char *new_path) override {
-        return m_fs->RenameDirectory(FixPath(old_path), FixPath(new_path));
+        R_TRY(m_fs->RenameDirectory(FixPath(old_path), FixPath(new_path)));
+        SignalNroChange(new_path);
+        R_SUCCEED();
     }
 
     Result OpenDirectory(const char *path, haze::Dir *out_dir) override {
@@ -409,6 +445,8 @@ struct FsProxy final : FsProxyBase {
 
 private:
     std::unique_ptr<fs::Fs> m_fs{};
+    // files opened to write an nro, and their path. libhaze runs on a single thread.
+    std::unordered_map<File*, std::string> m_nro_writes{};
 };
 
 struct FsProxyVfs : FsProxyBase {
