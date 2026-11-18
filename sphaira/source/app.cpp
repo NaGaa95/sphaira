@@ -2773,12 +2773,10 @@ void App::DisplayFtpOptions(bool left_side) {
         }
     );
 
-    if (platform::SupportsFtpSystemMounts) {
-        options->Add<ui::SidebarEntryBool>(
-            "Show album"_i18n, App::GetApp()->m_ftp_show_album,
-            "Shows the microSD card album folder."_i18n
-        );
-    }
+    options->Add<ui::SidebarEntryBool>(
+        "Show album"_i18n, App::GetApp()->m_ftp_show_album,
+        "Shows the microSD card album folder."_i18n
+    );
 
     if (platform::HasAtmosphere) {
         options->Add<ui::SidebarEntryBool>(
@@ -2821,7 +2819,7 @@ void App::DisplayFtpOptions(bool left_side) {
         );
     }
 
-    if (platform::SupportsFtpSystemMounts) {
+    if (platform::SupportsContentStorageMounts) {
         options->Add<ui::SidebarEntryBool>(
             "Show system contents"_i18n, App::GetApp()->m_ftp_show_content_system,
             "Shows the system contents folder."_i18n
@@ -2922,43 +2920,49 @@ void App::DisplayMtpOptions(bool left_side) {
         "Shows the microSD card album folder."_i18n
     );
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show microSD contents"_i18n, App::GetApp()->m_mtp_show_content_sd,
-        i18n::get("microsd_contents_info",
-            "Shows the microSD contents folder.\n\n"
-            "NOTE: This is not the normal microSD card storage, it is instead "
-            "the location where NCA's are stored. The normal microSD card is always mounted."
-        )
-    );
+    if (platform::SupportsContentStorageMounts) {
+        options->Add<ui::SidebarEntryBool>(
+            "Show microSD contents"_i18n, App::GetApp()->m_mtp_show_content_sd,
+            i18n::get("microsd_contents_info",
+                "Shows the microSD contents folder.\n\n"
+                "NOTE: This is not the normal microSD card storage, it is instead "
+                "the location where NCA's are stored. The normal microSD card is always mounted."
+            )
+        );
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show system contents"_i18n, App::GetApp()->m_mtp_show_content_system,
-        "Shows the system contents folder."_i18n
-    );
+        options->Add<ui::SidebarEntryBool>(
+            "Show system contents"_i18n, App::GetApp()->m_mtp_show_content_system,
+            "Shows the system contents folder."_i18n
+        );
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show user contents"_i18n, App::GetApp()->m_mtp_show_content_user,
-        "Shows the user contents folder."_i18n
-    );
+        options->Add<ui::SidebarEntryBool>(
+            "Show user contents"_i18n, App::GetApp()->m_mtp_show_content_user,
+            "Shows the user contents folder."_i18n
+        );
+    }
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show games"_i18n, App::GetApp()->m_mtp_show_games,
-        i18n::get("games_mtp_info",
-            "Shows the games folder.\n\n"
-            "This folder contains all of your installed games, allowing you to create "
-            "backups over MTP!\n\n"
-            "NOTE: This folder is read-only. You cannot delete games over MTP."
-        )
-    );
+    if (platform::SupportsGames) {
+        options->Add<ui::SidebarEntryBool>(
+            "Show games"_i18n, App::GetApp()->m_mtp_show_games,
+            i18n::get("games_mtp_info",
+                "Shows the games folder.\n\n"
+                "This folder contains all of your installed games, allowing you to create "
+                "backups over MTP!\n\n"
+                "NOTE: This folder is read-only. You cannot delete games over MTP."
+            )
+        );
+    }
 
-    options->Add<ui::SidebarEntryBool>(
-        "Show install"_i18n, App::GetApp()->m_mtp_show_install,
-        i18n::get("install_mtp_info",
-            "Shows the install folder.\n\n"
-            "This folder is used for installing games via MTP.\n\n"
-            "NOTE: You must open the \"MTP Install\" menu when trying to install a game!"
-        )
-    );
+    if (platform::SupportsInstall) {
+        options->Add<ui::SidebarEntryBool>(
+            "Show install"_i18n, App::GetApp()->m_mtp_show_install,
+            i18n::get("install_mtp_info",
+                "Shows the install folder.\n\n"
+                "This folder is used for installing games via MTP.\n\n"
+                "NOTE: You must open the \"MTP Install\" menu when trying to install a game!"
+            )
+        );
+    }
 
     options->Add<ui::SidebarEntryBool>(
         "Show mounts"_i18n, App::GetApp()->m_mtp_show_mounts,

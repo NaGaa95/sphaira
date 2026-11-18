@@ -624,7 +624,7 @@ bool Init() {
     g_ftpsrv_config.port = app->m_ftp_port.Get();
 
     // a config from the other console can have options set that are hidden here.
-    if (platform::SupportsFtpSystemMounts && app->m_ftp_show_album.Get()) {
+    if (app->m_ftp_show_album.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_ALBUM;
     }
     if (platform::HasAtmosphere && app->m_ftp_show_ams_contents.Get()) {
@@ -636,13 +636,13 @@ bool Init() {
     if (platform::SupportsNandAccess && app->m_ftp_show_bis_fs.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_BIS_FS;
     }
-    if (platform::SupportsFtpSystemMounts && app->m_ftp_show_content_system.Get()) {
+    if (platform::SupportsContentStorageMounts && app->m_ftp_show_content_system.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_CONTENT_SYSTEM;
     }
-    if (platform::SupportsFtpSystemMounts && app->m_ftp_show_content_user.Get()) {
+    if (platform::SupportsContentStorageMounts && app->m_ftp_show_content_user.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_CONTENT_USER;
     }
-    if (platform::SupportsFtpSystemMounts && app->m_ftp_show_content_sd.Get()) {
+    if (platform::SupportsContentStorageMounts && app->m_ftp_show_content_sd.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_CONTENT_SDCARD;
     }
     #if 0

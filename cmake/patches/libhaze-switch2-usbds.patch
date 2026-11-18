@@ -1,0 +1,181 @@
+diff --git a/source/usb_session.cpp b/source/usb_session.cpp
+index 1c043ab..5199d81 100644
+--- a/source/usb_session.cpp
++++ b/source/usb_session.cpp
+@@ -21,6 +21,97 @@ namespace haze {
+ 
+         constexpr const u32 DefaultInterfaceNumber = USBDS_DEFAULT_InterfaceNumber;
+ 
++#if defined(__SWITCH2__)
++        /* Switch 2's usb:ds takes Switch 1 11.0.0's commands, except on the
++         * interface: AppendConfigurationData is command 6 (Switch 1: 10), and
++         * the control transfer events that usbDsRegisterInterface asks for
++         * (command 5) fail. So the interface and its endpoints are registered
++         * here, as OunceMTP does (github.com/venustrikes/ouncemtp, ISC). */
++        constexpr const char *ProductName = "Nintendo Switch 2";
++        constexpr u8 InterfaceSlots = 4;
++
++        constinit UsbDsInterface g_interface;
++        constinit UsbDsEndpoint g_endpoints[UsbSessionEndpoint_Count];
++        constinit u32 g_endpoint_count;
++
++        Result RegisterInterface(UsbDsInterface **out) {
++            Service *ds = usbDsGetServiceSession();
++            Result rc = 0;
++            for (u8 slot = 0; slot < InterfaceSlots; slot++) {
++                g_interface = {};
++                serviceAssumeDomain(ds);
++                rc = serviceDispatchIn(ds, 1, slot, .out_num_objects = 1, .out_objects = std::addressof(g_interface.s));
++                if (R_SUCCEEDED(rc)) {
++                    g_interface.initialized = true;
++                    g_interface.interface_index = slot;
++                    *out = std::addressof(g_interface);
++                    R_SUCCEED();
++                }
++            }
++            R_RETURN(rc);
++        }
++
++        Result AppendConfigurationData(UsbDsInterface *interface, UsbDeviceSpeed speed, const void *buffer, size_t size) {
++            const u32 in = speed;
++            serviceAssumeDomain(std::addressof(interface->s));
++            R_RETURN(serviceDispatchIn(std::addressof(interface->s), 6, in,
++                .buffer_attrs = { SfBufferAttr_HipcMapAlias | SfBufferAttr_In },
++                .buffers = { { buffer, size } }));
++        }
++
++        Result RegisterEndpoint(UsbDsInterface *interface, UsbDsEndpoint **out, u8 address) {
++            UsbDsEndpoint *endpoint = std::addressof(g_endpoints[g_endpoint_count]);
++            *endpoint = {};
++            serviceAssumeDomain(std::addressof(interface->s));
++            R_TRY(serviceDispatchIn(std::addressof(interface->s), 0, address, .out_num_objects = 1, .out_objects = std::addressof(endpoint->s)));
++            endpoint->initialized = true;
++            g_endpoint_count++;
++
++            Handle event = INVALID_HANDLE;
++            serviceAssumeDomain(std::addressof(endpoint->s));
++            R_TRY(serviceDispatch(std::addressof(endpoint->s), 2, .out_handle_attrs = { SfOutHandleAttr_HipcCopy }, .out_handles = std::addressof(event)));
++            eventLoadRemote(std::addressof(endpoint->CompletionEvent), event, false);
++
++            *out = endpoint;
++            R_SUCCEED();
++        }
++
++        /* usbDsExit only closes the objects libounce registered. */
++        void ReleaseObjects() {
++            for (u32 i = 0; i < g_endpoint_count; i++) {
++                UsbDsEndpoint *endpoint = std::addressof(g_endpoints[i]);
++                usbDsEndpoint_Cancel(endpoint);
++                eventClose(std::addressof(endpoint->CompletionEvent));
++                serviceAssumeDomain(std::addressof(endpoint->s));
++                serviceClose(std::addressof(endpoint->s));
++                endpoint->initialized = false;
++            }
++            g_endpoint_count = 0;
++
++            if (g_interface.initialized) {
++                serviceAssumeDomain(std::addressof(g_interface.s));
++                serviceClose(std::addressof(g_interface.s));
++                g_interface.initialized = false;
++            }
++        }
++#else
++        constexpr const char *ProductName = "Nintendo Switch";
++
++        Result RegisterInterface(UsbDsInterface **out) {
++            R_RETURN(usbDsRegisterInterface(out));
++        }
++
++        Result AppendConfigurationData(UsbDsInterface *interface, UsbDeviceSpeed speed, const void *buffer, size_t size) {
++            R_RETURN(usbDsInterface_AppendConfigurationData(interface, speed, buffer, size));
++        }
++
++        Result RegisterEndpoint(UsbDsInterface *interface, UsbDsEndpoint **out, u8 address) {
++            R_RETURN(usbDsInterface_RegisterEndpoint(interface, out, address));
++        }
++
++        void ReleaseObjects() { /* ... */ }
++#endif
++
+     }
+ 
+     Result UsbSession::Initialize1x(const UsbCommsInterfaceInfo *info) {
+@@ -121,7 +212,7 @@ namespace haze {
+             .wBytesPerInterval = 0x00,
+         };
+ 
+-        R_TRY(usbDsRegisterInterface(std::addressof(m_interface)));
++        R_TRY(RegisterInterface(std::addressof(m_interface)));
+ 
+         u8 iInterface;
+         R_TRY(usbDsAddUsbStringDescriptor(std::addressof(iInterface), "MTP"));
+@@ -135,34 +226,34 @@ namespace haze {
+         /* Full speed config. */
+         endpoint_descriptor_in.wMaxPacketSize  = PtpUsbBulkFullSpeedMaxPacketLength;
+         endpoint_descriptor_out.wMaxPacketSize = PtpUsbBulkFullSpeedMaxPacketLength;
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, std::addressof(interface_descriptor), USB_DT_INTERFACE_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, std::addressof(endpoint_descriptor_in), USB_DT_ENDPOINT_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, std::addressof(endpoint_descriptor_out), USB_DT_ENDPOINT_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, std::addressof(endpoint_descriptor_interrupt), USB_DT_ENDPOINT_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, std::addressof(interface_descriptor), USB_DT_INTERFACE_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, std::addressof(endpoint_descriptor_in), USB_DT_ENDPOINT_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, std::addressof(endpoint_descriptor_out), USB_DT_ENDPOINT_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, std::addressof(endpoint_descriptor_interrupt), USB_DT_ENDPOINT_SIZE));
+ 
+         /* High speed config. */
+         endpoint_descriptor_in.wMaxPacketSize  = PtpUsbBulkHighSpeedMaxPacketLength;
+         endpoint_descriptor_out.wMaxPacketSize = PtpUsbBulkHighSpeedMaxPacketLength;
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_High, std::addressof(interface_descriptor), USB_DT_INTERFACE_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_High, std::addressof(endpoint_descriptor_in), USB_DT_ENDPOINT_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_High, std::addressof(endpoint_descriptor_out), USB_DT_ENDPOINT_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_High, std::addressof(endpoint_descriptor_interrupt), USB_DT_ENDPOINT_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_High, std::addressof(interface_descriptor), USB_DT_INTERFACE_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_High, std::addressof(endpoint_descriptor_in), USB_DT_ENDPOINT_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_High, std::addressof(endpoint_descriptor_out), USB_DT_ENDPOINT_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_High, std::addressof(endpoint_descriptor_interrupt), USB_DT_ENDPOINT_SIZE));
+ 
+         /* Super speed config. */
+         endpoint_descriptor_in.wMaxPacketSize  = PtpUsbBulkSuperSpeedMaxPacketLength;
+         endpoint_descriptor_out.wMaxPacketSize = PtpUsbBulkSuperSpeedMaxPacketLength;
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(interface_descriptor), USB_DT_INTERFACE_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_descriptor_in), USB_DT_ENDPOINT_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_companion), USB_DT_SS_ENDPOINT_COMPANION_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_descriptor_out), USB_DT_ENDPOINT_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_companion), USB_DT_SS_ENDPOINT_COMPANION_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_descriptor_interrupt), USB_DT_ENDPOINT_SIZE));
+-        R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_companion_interrupt), USB_DT_SS_ENDPOINT_COMPANION_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(interface_descriptor), USB_DT_INTERFACE_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_descriptor_in), USB_DT_ENDPOINT_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_companion), USB_DT_SS_ENDPOINT_COMPANION_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_descriptor_out), USB_DT_ENDPOINT_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_companion), USB_DT_SS_ENDPOINT_COMPANION_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_descriptor_interrupt), USB_DT_ENDPOINT_SIZE));
++        R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, std::addressof(endpoint_companion_interrupt), USB_DT_SS_ENDPOINT_COMPANION_SIZE));
+ 
+         /* Set up endpoints. */
+-        R_TRY(usbDsInterface_RegisterEndpoint(m_interface, std::addressof(m_endpoints[UsbSessionEndpoint_Write]), endpoint_descriptor_in.bEndpointAddress));
+-        R_TRY(usbDsInterface_RegisterEndpoint(m_interface, std::addressof(m_endpoints[UsbSessionEndpoint_Read]), endpoint_descriptor_out.bEndpointAddress));
+-        R_TRY(usbDsInterface_RegisterEndpoint(m_interface, std::addressof(m_endpoints[UsbSessionEndpoint_Interrupt]), endpoint_descriptor_interrupt.bEndpointAddress));
++        R_TRY(RegisterEndpoint(m_interface, std::addressof(m_endpoints[UsbSessionEndpoint_Write]), endpoint_descriptor_in.bEndpointAddress));
++        R_TRY(RegisterEndpoint(m_interface, std::addressof(m_endpoints[UsbSessionEndpoint_Read]), endpoint_descriptor_out.bEndpointAddress));
++        R_TRY(RegisterEndpoint(m_interface, std::addressof(m_endpoints[UsbSessionEndpoint_Interrupt]), endpoint_descriptor_interrupt.bEndpointAddress));
+ 
+         R_RETURN(usbDsInterface_EnableInterface(m_interface));
+     }
+@@ -178,7 +269,7 @@ namespace haze {
+             /* Report strings. */
+             u8 iManufacturer, iProduct, iSerialNumber;
+             R_TRY(usbDsAddUsbStringDescriptor(std::addressof(iManufacturer), "Nintendo"));
+-            R_TRY(usbDsAddUsbStringDescriptor(std::addressof(iProduct), "Nintendo Switch"));
++            R_TRY(usbDsAddUsbStringDescriptor(std::addressof(iProduct), ProductName));
+             R_TRY(usbDsAddUsbStringDescriptor(std::addressof(iSerialNumber), GetSerialNumber()));
+ 
+             /* Send device descriptors */
+@@ -246,6 +337,7 @@ namespace haze {
+     }
+ 
+     void UsbSession::Finalize() {
++        ReleaseObjects();
+         usbDsExit();
+     }
+ 

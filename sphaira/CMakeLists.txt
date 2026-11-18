@@ -36,12 +36,12 @@ option(ENABLE_DEVOPTAB_WEBDAV "" ON)
 # it also adds 230k to binary size, and i don't think anyone will use it.
 option(ENABLE_DEVOPTAB_SFTP "" OFF)
 
-# not available on Switch 2: usb hdd/dvd and mtp need usb:hs / usb:ds, which
-# libounce has not adapted yet, nvjpg is written for the Switch 1 gpu, nsz is
-# only used by the game and game card exports and ownfoil installs titles (see
-# include/platform.hpp).
+# not available on Switch 2: usb hdd/dvd need usb:hs, which kaiHEN never
+# answers (every later program then hangs until a reboot), nvjpg is written for
+# the Switch 1 gpu, nsz is only used by the game and game card exports and
+# ownfoil installs titles (see include/platform.hpp).
 if (SWITCH2)
-    foreach (feature IN ITEMS ENABLE_LIBUSBHSFS ENABLE_NTFS ENABLE_EXT4 ENABLE_LIBUSBDVD ENABLE_LIBHAZE ENABLE_NVJPG ENABLE_NSZ
+    foreach (feature IN ITEMS ENABLE_LIBUSBHSFS ENABLE_NTFS ENABLE_EXT4 ENABLE_LIBUSBDVD ENABLE_NVJPG ENABLE_NSZ
                               ENABLE_OWNFOIL)
         set(${feature} OFF CACHE BOOL "not available on Switch 2" FORCE)
     endforeach()
@@ -413,7 +413,10 @@ if (ENABLE_FTPSRV)
         GIT_REPOSITORY https://github.com/ITotalJustice/ftpsrv.git
         GIT_TAG 7c82402
         SOURCE_SUBDIR NONE
-        PATCH_COMMAND "${GIT_EXECUTABLE}" apply --ignore-whitespace "${CMAKE_SOURCE_DIR}/cmake/patches/ftpsrv-upload-callback.patch"
+        PATCH_COMMAND ${CMAKE_COMMAND}
+            -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+            -DPATCH=${CMAKE_SOURCE_DIR}/cmake/patches/ftpsrv-upload-callback.patch
+            -P ${CMAKE_SOURCE_DIR}/cmake/apply_patch.cmake
     )
 
     FetchContent_MakeAvailable(ftpsrv)
@@ -462,9 +465,21 @@ if (ENABLE_FTPSRV)
 endif()
 
 if (ENABLE_LIBHAZE)
+    # Switch 2's usb:ds differs from what libounce's usb:ds helpers send, see
+    # the patch.
+    set(libhaze_patch)
+    if (SWITCH2)
+        set(libhaze_patch PATCH_COMMAND ${CMAKE_COMMAND}
+            -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+            -DPATCH=${CMAKE_SOURCE_DIR}/cmake/patches/libhaze-switch2-usbds.patch
+            -P ${CMAKE_SOURCE_DIR}/cmake/apply_patch.cmake
+        )
+    endif()
+
     FetchContent_Declare(libhaze
         GIT_REPOSITORY https://github.com/R-YaTian/libhaze.git
         GIT_TAG 9f5467c
+        ${libhaze_patch}
     )
 
     FetchContent_MakeAvailable(libhaze)

@@ -36,8 +36,8 @@ inline constexpr bool SupportsAppstore = !IsSwitch2;
 inline constexpr bool HasAtmosphere = !IsSwitch2;
 // nand (bis) access over ftp, the Switch 2 nand layout is not known yet.
 inline constexpr bool SupportsNandAccess = !IsSwitch2;
-// the album and content storage folders over ftp, they don't open on Switch 2.
-inline constexpr bool SupportsFtpSystemMounts = !IsSwitch2;
+// the content storage folders over ftp and mtp, not verified on Switch 2.
+inline constexpr bool SupportsContentStorageMounts = !IsSwitch2;
 // the web applet only shows "This feature is not available" on Switch 2.
 inline constexpr bool SupportsWebApplet = !IsSwitch2;
 // the homebrew menu's abi warning.
