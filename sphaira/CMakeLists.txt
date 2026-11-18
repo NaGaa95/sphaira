@@ -294,6 +294,7 @@ FetchContent_Declare(nvjpg
 FetchContent_Declare(dr_libs
     GIT_REPOSITORY https://github.com/mackron/dr_libs.git
     GIT_TAG b962384
+    GIT_SUBMODULES ""
     SOURCE_SUBDIR NONE
 )
 
