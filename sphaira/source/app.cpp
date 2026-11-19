@@ -1903,7 +1903,7 @@ App::App(const char* argv0) {
     }
 
     // set if we are hbmenu
-    if (IsHbmenu() && platform::ExitsProcessAsHbmenu) {
+    if (IsHbmenu()) {
         __nx_applet_exit_mode = 1;
     }
 

@@ -40,9 +40,6 @@ inline constexpr bool SupportsContentStorageMounts = !IsSwitch2;
 inline constexpr bool SupportsWebApplet = !IsSwitch2;
 // the homebrew menu's abi warning.
 inline constexpr bool ShowsAbiWarning = !IsSwitch2;
-// exit the process when quitting as hbmenu. on Switch 2, kaiHEN's loader does
-// that itself once hbmenu has returned.
-inline constexpr bool ExitsProcessAsHbmenu = !IsSwitch2;
 // render at the output resolution: 1080p handheld, the tv's (up to 4K) docked.
 inline constexpr bool FollowsDisplayResolution = IsSwitch2;
 
