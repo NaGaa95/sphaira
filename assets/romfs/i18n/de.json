@@ -350,6 +350,11 @@
     "- bis_user",
     "- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "Zeigt die folgenden bis-Dateisysteme:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Systeminhalte anzeigen",
   "Shows the system contents folder.": "Zeigt den Systeminhaltsordner an.",
   "Show user contents": "Benutzerinhalte anzeigen",

@@ -335,6 +335,11 @@
     "- bis_用戶",
     "- bis_系統"
   ],
+  "bis_fs_user_system_info": [
+    "顯示以下 BIS 檔案系統：",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "顯示系統 contents",
   "Shows the system contents folder.": "顯示系統 contents 資料夾。",
   "Show user contents": "顯示使用者 contents",

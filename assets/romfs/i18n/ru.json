@@ -351,6 +351,11 @@
     "- bis_user",
     "- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "Показывает следующие файловые системы bis:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Показать содержимое системы",
   "Shows the system contents folder.": "Показывает папку с содержимым системы.",
   "Show user contents": "Показать содержимое пользователя",

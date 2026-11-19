@@ -349,6 +349,11 @@
     "-bis_user",
     "- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "Affiche les systèmes de fichiers bis suivants :",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Afficher le contenu du système",
   "Shows the system contents folder.": "Affiche le dossier du contenu du système.",
   "Show user contents": "Afficher le contenu utilisateur",

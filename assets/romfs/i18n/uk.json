@@ -350,6 +350,11 @@
     "- bis_user",
     "- біс_система"
   ],
+  "bis_fs_user_system_info": [
+    "Показує такі файлові системи bis:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Показати вміст системи",
   "Shows the system contents folder.": "Показує папку системного вмісту.",
   "Show user contents": "Показати вміст користувача",

@@ -630,19 +630,19 @@ bool Init() {
     if (platform::HasAtmosphere && app->m_ftp_show_ams_contents.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_AMS_CONTENTS;
     }
-    if (platform::SupportsNandAccess && app->m_ftp_show_bis_storage.Get()) {
+    if (platform::SupportsAllNandPartitions && app->m_ftp_show_bis_storage.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_BIS_STORAGE;
     }
-    if (platform::SupportsNandAccess && app->m_ftp_show_bis_fs.Get()) {
+    if (app->m_ftp_show_bis_fs.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_BIS_FS;
     }
-    if (platform::SupportsContentStorageMounts && app->m_ftp_show_content_system.Get()) {
+    if (app->m_ftp_show_content_system.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_CONTENT_SYSTEM;
     }
-    if (platform::SupportsContentStorageMounts && app->m_ftp_show_content_user.Get()) {
+    if (app->m_ftp_show_content_user.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_CONTENT_USER;
     }
-    if (platform::SupportsContentStorageMounts && app->m_ftp_show_content_sd.Get()) {
+    if (app->m_ftp_show_content_sd.Get()) {
         g_ftpsrv_mount_flags |= VfsNxMountFlag_CONTENT_SDCARD;
     }
     #if 0
@@ -668,7 +668,7 @@ bool Init() {
         });
     }
 
-    if (platform::SupportsGames && app->m_ftp_show_games.Get()) {
+    if (app->m_ftp_show_games.Get()) {
         g_custom_vfs.push_back({
             .name = "games",
             .user = NULL,

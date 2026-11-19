@@ -19,9 +19,12 @@ inline constexpr bool IsSwitch2 = false;
 inline constexpr bool SupportsInstall = !IsSwitch2;
 // forwarders and the 4 core launch, both install an nca built around hbl.
 inline constexpr bool SupportsForwarders = !IsSwitch2;
-// the games and data management menus, not verified on Switch 2.
-inline constexpr bool SupportsGames = !IsSwitch2;
-// the game card menu, it debugs fs, which a game process may not do.
+// the console keys, spl refuses to derive them on Switch 2.
+inline constexpr bool SupportsKeyDerivation = !IsSwitch2;
+// rewriting an installed content meta record, not verified on Switch 2.
+inline constexpr bool SupportsContentMetaEdit = !IsSwitch2;
+// the game card menu and the device operator's game card commands, which
+// differ on Switch 2: IsGameCardInserted ends the program's fs session there.
 inline constexpr bool SupportsGameCard = !IsSwitch2;
 // usb install, libounce has not adapted usb:ds yet.
 inline constexpr bool SupportsUsbInstall = !IsSwitch2;
@@ -32,10 +35,9 @@ inline constexpr bool SupportsThemezer = !IsSwitch2;
 // emummc and exosphère configs, and atmosphère's folders. svcCallSecureMonitor
 // ends the process on Switch 2.
 inline constexpr bool HasAtmosphere = !IsSwitch2;
-// nand (bis) access over ftp, the Switch 2 nand layout is not known yet.
-inline constexpr bool SupportsNandAccess = !IsSwitch2;
-// the content storage folders over ftp and mtp, not verified on Switch 2.
-inline constexpr bool SupportsContentStorageMounts = !IsSwitch2;
+// the calibration and safe mode partitions and the raw nand, fs locks the raw
+// partitions on Switch 2.
+inline constexpr bool SupportsAllNandPartitions = !IsSwitch2;
 // the web applet only shows "This feature is not available" on Switch 2.
 inline constexpr bool SupportsWebApplet = !IsSwitch2;
 // the homebrew menu's abi warning.

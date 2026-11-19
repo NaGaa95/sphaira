@@ -128,6 +128,22 @@ Result GetFsFileSystemType(u8 content_type, FsFileSystemType& out) {
     R_THROW(0x1);
 }
 
+// without the keys to decrypt the header, ncm still has the content type.
+u8 GetContentType(const NcaEntry& e) {
+    if (e.header.IsValid()) {
+        return e.header.content_type;
+    }
+
+    switch (e.content_type) {
+        case NcmContentType_Meta: return nca::ContentType_Meta;
+        case NcmContentType_Control: return nca::ContentType_Control;
+        case NcmContentType_HtmlDocument:
+        case NcmContentType_LegalInformation: return nca::ContentType_Manual;
+        case NcmContentType_Data: return nca::ContentType_Data;
+        default: return nca::ContentType_Program;
+    }
+}
+
 } // namespace
 
 Menu::Menu(Entry& entry, const meta::MetaEntry& meta_entry)
@@ -225,7 +241,9 @@ Menu::Menu(Entry& entry, const meta::MetaEntry& meta_entry)
     );
 
     keys::Keys keys;
-    parse_keys(keys, false);
+    if (platform::SupportsKeyDerivation) {
+        parse_keys(keys, false);
+    }
 
     if (R_FAILED(GetNcmMetaFromMetaStatus(m_meta_entry.status, m_meta))) {
         log_write("[NCA-MENU] failed to GetNcmMetaFromMetaStatus()\n");
@@ -253,6 +271,7 @@ Menu::Menu(Entry& entry, const meta::MetaEntry& meta_entry)
         NcaEntry entry{};
         entry.content_id = info.content_id;
         entry.content_type = info.content_type;
+        entry.attr = info.attr;
         ncmContentInfoSizeToU64(&info, &entry.size);
 
         bool has = false;
@@ -411,7 +430,7 @@ Result Menu::MountNcaFs() {
 
     // mount using devoptab instead if fails.
     FsFileSystemType type;
-    if (R_FAILED(GetFsFileSystemType(e.header.content_type, type))) {
+    if (R_FAILED(GetFsFileSystemType(GetContentType(e), type))) {
         fs::FsPath root;
         R_TRY(devoptab::MountNcaNcm(m_meta.cs, &e.content_id, root));
 
@@ -421,13 +440,15 @@ Result Menu::MountNcaFs() {
 
         filebrowser::MountFsHelper(fs, utils::hexIdToStr(e.content_id).str);
     } else {
-        // get fs path from ncm.
+        // get fs path from ncm, with the content's own attributes: Switch 2
+        // refuses FsContentAttributes_All.
+        const auto attr = static_cast<FsContentAttributes>(e.attr & FsContentAttributes_All);
         u64 program_id;
         fs::FsPath path;
-        R_TRY(ncm::GetFsPathFromContentId(m_meta.cs, m_meta.key, e.content_id, &program_id, &path));
+        R_TRY(ncm::GetFsPathFromContentId(m_meta.cs, m_meta.key, e.content_id, &program_id, &path, attr));
 
         // ensure that mounting worked.
-        auto fs = std::make_shared<fs::FsNativeId>(program_id, type, path);
+        auto fs = std::make_shared<fs::FsNativeId>(program_id, type, path, attr);
         R_TRY(fs->GetFsOpenResult());
 
         filebrowser::MountFsHelper(fs, utils::hexIdToStr(e.content_id).str);

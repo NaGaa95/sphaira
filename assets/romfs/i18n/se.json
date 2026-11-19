@@ -350,6 +350,11 @@
     "- bis_user",
     "- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "Visar följande bis-filsystem:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Visa systeminnehåll",
   "Shows the system contents folder.": "Visar systeminnehållsmappen.",
   "Show user contents": "Visa användarinnehåll",

@@ -350,6 +350,11 @@
     "- bis_user",
     "- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "Shows the following bis file systems:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Show system contents",
   "Shows the system contents folder.": "Shows the system contents folder.",
   "Show user contents": "Show user contents",

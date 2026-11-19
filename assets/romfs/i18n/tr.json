@@ -350,6 +350,11 @@
     "- bis_user",
     "- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "Aşağıdaki bis dosya sistemlerini gösterir:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Sistem içeriklerini göster",
   "Shows the system contents folder.": "Sistem içerikleri klasörünü gösterir.",
   "Show user contents": "Kullanıcı içeriklerini göster",

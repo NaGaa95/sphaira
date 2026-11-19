@@ -214,11 +214,11 @@ Result SetRequiredSystemVersion(NcmContentMetaDatabase *db, const NcmContentMeta
     return ncmContentMetaDatabaseCommit(db);
 }
 
-Result GetFsPathFromContentId(NcmContentStorage* cs, const NcmContentMetaKey& key, const NcmContentId& id, u64* out_program_id, fs::FsPath* out_path) {
+Result GetFsPathFromContentId(NcmContentStorage* cs, const NcmContentMetaKey& key, const NcmContentId& id, u64* out_program_id, fs::FsPath* out_path, FsContentAttributes attr) {
     if (out_program_id) {
         *out_program_id = key.id; // todo: verify.
         if (hosversionAtLeast(17,0,0)) {
-            R_TRY(ncmContentStorageGetProgramId(cs, out_program_id, &id, FsContentAttributes_All));
+            R_TRY(ncmContentStorageGetProgramId(cs, out_program_id, &id, attr));
         }
     }
 

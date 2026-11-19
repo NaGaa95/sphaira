@@ -358,6 +358,11 @@
     "다음 BIS 파일 시스템을 표시합니다:",
     "- bis_calibration_file\n- bis_safe_mode\n- bis_user\n- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "다음 BIS 파일 시스템을 표시합니다:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "시스템 콘텐츠",
   "Shows the system contents folder.": [
     "- FTP\n이름: contents_system\n",

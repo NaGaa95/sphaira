@@ -350,6 +350,11 @@
     "- bis_user",
     "- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "Mostra i seguenti file system interni:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Mostra contenuti del sistema",
   "Shows the system contents folder.": "Mostra la cartella dei contenuti del sistema.",
   "Show user contents": "Mostra contenuti dell'utente",

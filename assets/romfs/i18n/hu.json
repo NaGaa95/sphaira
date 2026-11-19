@@ -350,6 +350,11 @@
     "- bis_user",
     "- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "Megjeleníti a következő bis fájlrendszereket:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Rendszertartalom megjelenítése",
   "Shows the system contents folder.": "Megjeleníti a rendszer tartalommappáját.",
   "Show user contents": "Felhasználói tartalom megjelenítése",

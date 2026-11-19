@@ -1065,19 +1065,19 @@ bool Init() {
         g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeImage>(FsImageDirectoryId_Sd), "Album", "Album (Image SD)"));
     }
 
-    if (platform::SupportsContentStorageMounts && App::GetApp()->m_mtp_show_content_sd.Get()) {
+    if (App::GetApp()->m_mtp_show_content_sd.Get()) {
         g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeContentStorage>(FsContentStorageId_SdCard), "ContentsM", "Contents (microSD card)"));
     }
 
-    if (platform::SupportsContentStorageMounts && App::GetApp()->m_mtp_show_content_system.Get()) {
+    if (App::GetApp()->m_mtp_show_content_system.Get()) {
         g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeContentStorage>(FsContentStorageId_System), "ContentsS", "Contents (System)"));
     }
 
-    if (platform::SupportsContentStorageMounts && App::GetApp()->m_mtp_show_content_user.Get()) {
+    if (App::GetApp()->m_mtp_show_content_user.Get()) {
         g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsNativeContentStorage>(FsContentStorageId_User), "ContentsU", "Contents (User)"));
     }
 
-    if (platform::SupportsGames && App::GetApp()->m_mtp_show_games.Get()) {
+    if (App::GetApp()->m_mtp_show_games.Get()) {
         g_fs_entries.emplace_back(std::make_shared<FsProxy>(std::make_unique<fs::FsStdio>(true, "games:/"), "Games", "Games"));
     }
 

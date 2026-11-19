@@ -14,6 +14,7 @@ struct NcaEntry {
     NcmContentId content_id{};
     u64 size{};
     u8 content_type{};
+    u8 attr{};
     // decrypted nca header.
     nca::Header header{};
     // set if missing.

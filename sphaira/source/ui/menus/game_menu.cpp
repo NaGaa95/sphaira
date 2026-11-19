@@ -208,16 +208,18 @@ void FreeEntry(NVGcontext* vg, Entry& e) {
 // the applications on the inserted game card, empty if there is none. the
 // database is opened each time, as the card may have been swapped since.
 auto GetGameCardAppIds() -> std::vector<u64> {
-    FsDeviceOperator dev_op;
-    if (R_FAILED(fsOpenDeviceOperator(&dev_op))) {
-        return {};
-    }
-    ON_SCOPE_EXIT(fsDeviceOperatorClose(&dev_op));
-
     // the database can still be opened for a moment after the card is out.
-    bool inserted{};
-    if (R_FAILED(fsDeviceOperatorIsGameCardInserted(&dev_op, &inserted)) || !inserted) {
-        return {};
+    if (platform::SupportsGameCard) {
+        FsDeviceOperator dev_op;
+        if (R_FAILED(fsOpenDeviceOperator(&dev_op))) {
+            return {};
+        }
+        ON_SCOPE_EXIT(fsDeviceOperatorClose(&dev_op));
+
+        bool inserted{};
+        if (R_FAILED(fsDeviceOperatorIsGameCardInserted(&dev_op, &inserted)) || !inserted) {
+            return {};
+        }
     }
 
     NcmContentMetaDatabase db;
@@ -698,7 +700,7 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
                 });
 
                 // language override is useless for forwarders.
-                if ((m_entries[m_index].app_id & 0x0500000000000000) != 0x0500000000000000) {
+                if (platform::HasAtmosphere && (m_entries[m_index].app_id & 0x0500000000000000) != 0x0500000000000000) {
                     // fetch supported languages if not already known.
                     auto& lang_entry = m_entries[m_index];
                     if (!lang_entry.supported_language_flag && lang_entry.status == title::NacpLoadStatus::Loaded) {
@@ -732,10 +734,12 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
                 });
                 export_nsp->Depends(App::IsApplication, "Not supported in Applet Mode"_i18n);
 
+#ifdef ENABLE_NSZ
                 auto export_nsz = options->Add<SidebarEntryCallback>("Export NSZ"_i18n, [this](){
                     ExportOptions(true);
                 },  "Exports to NSZ (compressed NSP)"_i18n);
                 export_nsz->Depends(App::IsApplication, "Not supported in Applet Mode"_i18n);
+#endif // ENABLE_NSZ
 
                 options->Add<SidebarEntryCallback>("Export options"_i18n, [this](){
                     App::DisplayDumpOptions(false);
@@ -792,7 +796,7 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
                     SetPlayStatsEnabled(v_out);
                 }, "Shows playtime and enables the play statistic sorts. Disable for faster list refreshes and fewer SD card writes on large libraries."_i18n);
 
-                if (!m_entries.empty()) {
+                if (!m_entries.empty() && platform::HasAtmosphere) {
                     options->Add<SidebarEntryCallback>("Create contents folder"_i18n, [this](){
                         // recursive, as the parent folders may not exist yet.
                         // an already existing folder is not an error.
@@ -803,7 +807,9 @@ Menu::Menu(u32 flags) : grid::Menu{"Games"_i18n, flags} {
                             App::Notify("Folder created!"_i18n);
                         }
                     });
+                }
 
+                if (!m_entries.empty()) {
                     options->Add<SidebarEntryCallback>("Create save"_i18n, [this](){
                         ui::PopupList::Items items{};
                         const auto accounts = App::GetAccountList();
@@ -1904,7 +1910,7 @@ bool GetPatchDisplayVersion(const ContentInfoEntry& info, char* out, s64 size) {
 
     u64 program_id;
     fs::FsPath path;
-    auto rc = ncm::GetFsPathFromContentId(&title::GetNcmCs(info.status.storageID), info.key, it->content_id, &program_id, &path);
+    auto rc = ncm::GetFsPathFromContentId(&title::GetNcmCs(info.status.storageID), info.key, it->content_id, &program_id, &path, static_cast<FsContentAttributes>(it->attr & FsContentAttributes_All));
     if (R_SUCCEEDED(rc)) {
         rc = nca::ParseControl(path, program_id, out, size, nullptr, offsetof(NacpStruct, display_version));
     }
@@ -1960,7 +1966,7 @@ Result BuildContentEntry(const NsApplicationContentMetaStatus& status, ContentIn
     for (const auto& info : infos) {
         // check if we need to fetch tickets.
         NcmRightsId ncm_rights_id;
-        R_TRY(ncmContentStorageGetRightsIdFromContentId(meta.cs, std::addressof(ncm_rights_id), std::addressof(info.content_id), FsContentAttributes_All));
+        R_TRY(ncmContentStorageGetRightsIdFromContentId(meta.cs, std::addressof(ncm_rights_id), std::addressof(info.content_id), static_cast<FsContentAttributes>(info.attr & FsContentAttributes_All)));
 
         if (es::IsRightsIdValid(ncm_rights_id.rights_id)) {
             const auto it = std::ranges::find_if(out.ncm_rights_id, [&ncm_rights_id](auto& e){
@@ -2015,7 +2021,8 @@ Result BuildNspEntry(const Entry& e, std::string_view export_name, const Content
         }
 
         // patch fake ticket / convert personalised to common if needed.
-        R_TRY(es::PatchTicket(entry.tik_data, entry.cert_data, key_gen, keys, App::GetApp()->m_dump_convert_to_common_ticket.Get()));
+        const auto convert = platform::SupportsKeyDerivation && App::GetApp()->m_dump_convert_to_common_ticket.Get();
+        R_TRY(es::PatchTicket(entry.tik_data, entry.cert_data, key_gen, keys, convert));
 
         char tik_name[64];
         std::snprintf(tik_name, sizeof(tik_name), "%s%s", utils::hexIdToStr(rights_id).str, ".tik");
@@ -2045,8 +2052,11 @@ Result BuildNspEntries(Entry& e, const title::MetaEntries& meta_entries, std::ve
     const auto english_name = fix_filenames ? title::GetEnglishTitleName(e.app_id) : std::string{};
     const auto export_name = title::MakeExportTitleName(e.GetName(), english_name, fix_filenames);
 
+    // only converting a personalised ticket needs them.
     keys::Keys keys;
-    R_TRY(keys::parse_keys(keys, true));
+    if (platform::SupportsKeyDerivation) {
+        R_TRY(keys::parse_keys(keys, true));
+    }
 
     for (const auto& status : meta_entries) {
         ContentInfoEntry info;

@@ -351,6 +351,11 @@
     "- bis_usuario",
     "- bis_sistema"
   ],
+  "bis_fs_user_system_info": [
+    "Muestra los siguientes sistemas BIS:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Mostrar contenidos del sistema",
   "Shows the system contents folder.": "Muestra la carpeta de contenidos del sistema.",
   "Show user contents": "Mostrar contenidos de usuario",

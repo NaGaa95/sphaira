@@ -3,6 +3,7 @@
 
 #include "log.hpp"
 #include "defines.hpp"
+#include "platform.hpp"
 
 #include <fcntl.h>
 
@@ -421,6 +422,177 @@ int Device::devoptab_lstat(const char *path, struct stat *st) {
     return 0;
 }
 
+// fs locks the raw nand partitions on Switch 2, so User and System are read
+// through the file systems fs mounts on them instead.
+struct NativeFile {
+    FsFile file;
+    s64 off;
+};
+
+struct NativeDir {
+    FsDir dir;
+    char path[FS_MAX_PATH];
+};
+
+void fill_native_stat(struct stat *st, bool is_dir, s64 size) {
+    std::memset(st, 0, sizeof(*st));
+    st->st_nlink = 1;
+
+    if (is_dir) {
+        st->st_mode = S_IFDIR | S_IRUSR | S_IRGRP | S_IROTH;
+    } else {
+        st->st_size = size;
+        st->st_mode = S_IFREG | S_IRUSR | S_IRGRP | S_IROTH;
+    }
+}
+
+struct NativeDevice final : common::MountDevice {
+    NativeDevice(FsBisPartitionId id, const common::MountConfig& _config)
+    : MountDevice{_config}
+    , m_id{id} {
+
+    }
+
+    ~NativeDevice() {
+        if (mounted) {
+            fsFsClose(&m_fs);
+        }
+    }
+
+private:
+    bool Mount() override {
+        if (mounted) {
+            return true;
+        }
+
+        const auto rc = fsOpenBisFileSystem(&m_fs, m_id, "");
+        if (R_FAILED(rc)) {
+            log_write("[FATFS] fsOpenBisFileSystem(%d) failed: 0x%X\n", m_id, rc);
+            return false;
+        }
+
+        return mounted = true;
+    }
+
+    int devoptab_open(void *fileStruct, const char *path, int flags, int mode) override {
+        auto file = static_cast<NativeFile*>(fileStruct);
+
+        if (R_FAILED(fsFsOpenFile(&m_fs, path, FsOpenMode_Read, &file->file))) {
+            return -ENOENT;
+        }
+
+        file->off = 0;
+        return 0;
+    }
+
+    int devoptab_close(void *fd) override {
+        fsFileClose(&static_cast<NativeFile*>(fd)->file);
+        return 0;
+    }
+
+    ssize_t devoptab_read(void *fd, char *ptr, size_t len) override {
+        auto file = static_cast<NativeFile*>(fd);
+
+        u64 bytes_read{};
+        if (R_FAILED(fsFileRead(&file->file, file->off, ptr, len, FsReadOption_None, &bytes_read))) {
+            return -EIO;
+        }
+
+        file->off += bytes_read;
+        return bytes_read;
+    }
+
+    ssize_t devoptab_seek(void *fd, off_t pos, int dir) override {
+        auto file = static_cast<NativeFile*>(fd);
+
+        if (dir == SEEK_CUR) {
+            pos += file->off;
+        } else if (dir == SEEK_END) {
+            s64 size{};
+            if (R_FAILED(fsFileGetSize(&file->file, &size))) {
+                return -EIO;
+            }
+            pos += size;
+        }
+
+        return file->off = std::max<off_t>(pos, 0);
+    }
+
+    int devoptab_fstat(void *fd, struct stat *st) override {
+        s64 size{};
+        if (R_FAILED(fsFileGetSize(&static_cast<NativeFile*>(fd)->file, &size))) {
+            return -EIO;
+        }
+
+        fill_native_stat(st, false, size);
+        return 0;
+    }
+
+    int devoptab_diropen(void* fd, const char *path) override {
+        auto dir = static_cast<NativeDir*>(fd);
+
+        if (R_FAILED(fsFsOpenDirectory(&m_fs, path, FsDirOpenMode_ReadDirs | FsDirOpenMode_ReadFiles, &dir->dir))) {
+            return -ENOENT;
+        }
+
+        std::snprintf(dir->path, sizeof(dir->path), "%s", path);
+        return 0;
+    }
+
+    int devoptab_dirreset(void* fd) override {
+        auto dir = static_cast<NativeDir*>(fd);
+
+        fsDirClose(&dir->dir);
+        if (R_FAILED(fsFsOpenDirectory(&m_fs, dir->path, FsDirOpenMode_ReadDirs | FsDirOpenMode_ReadFiles, &dir->dir))) {
+            return -EIO;
+        }
+
+        return 0;
+    }
+
+    int devoptab_dirnext(void* fd, char *filename, struct stat *filestat) override {
+        auto dir = static_cast<NativeDir*>(fd);
+
+        FsDirectoryEntry entry{};
+        s64 count{};
+        if (R_FAILED(fsDirRead(&dir->dir, &count, 1, &entry)) || !count) {
+            return -EIO;
+        }
+
+        std::strcpy(filename, entry.name);
+        fill_native_stat(filestat, entry.type == FsDirEntryType_Dir, entry.file_size);
+        return 0;
+    }
+
+    int devoptab_dirclose(void* fd) override {
+        fsDirClose(&static_cast<NativeDir*>(fd)->dir);
+        return 0;
+    }
+
+    int devoptab_lstat(const char *path, struct stat *st) override {
+        FsDirEntryType type;
+        if (R_FAILED(fsFsGetEntryType(&m_fs, path, &type))) {
+            return -ENOENT;
+        }
+
+        s64 size{};
+        if (type == FsDirEntryType_File) {
+            FsFile file;
+            if (R_SUCCEEDED(fsFsOpenFile(&m_fs, path, FsOpenMode_Read, &file))) {
+                fsFileGetSize(&file, &size);
+                fsFileClose(&file);
+            }
+        }
+
+        fill_native_stat(st, type == FsDirEntryType_Dir, size);
+        return 0;
+    }
+
+    const FsBisPartitionId m_id;
+    FsFileSystem m_fs{};
+    bool mounted{};
+};
+
 } // namespace
 
 Result MountFatfsAll() {
@@ -431,12 +603,26 @@ Result MountFatfsAll() {
         config.read_only = true;
         config.dump_hidden = true;
 
-        if (!common::MountNetworkDevice2(
-            std::make_unique<Device>((BisMountType)i, config),
-            config,
-            sizeof(File), sizeof(Dir),
-            bis.volume_name, bis.mount_name
-        )) {
+        bool mounted;
+        if (platform::SupportsAllNandPartitions) {
+            mounted = common::MountNetworkDevice2(
+                std::make_unique<Device>((BisMountType)i, config),
+                config,
+                sizeof(File), sizeof(Dir),
+                bis.volume_name, bis.mount_name
+            );
+        } else if (bis.id == FsBisPartitionId_User || bis.id == FsBisPartitionId_System) {
+            mounted = common::MountNetworkDevice2(
+                std::make_unique<NativeDevice>(bis.id, config),
+                config,
+                sizeof(NativeFile), sizeof(NativeDir),
+                bis.volume_name, bis.mount_name
+            );
+        } else {
+            continue;
+        }
+
+        if (!mounted) {
             log_write("[FATFS] Failed to mount %s\n", bis.volume_name);
         }
     }

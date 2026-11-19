@@ -240,7 +240,7 @@ bool Device::Mount() {
         m_ns_init = true;
     }
 
-    if (!m_keys_init) {
+    if (!m_keys_init && platform::SupportsKeyDerivation) {
         keys::parse_keys(m_keys, true);
     }
 

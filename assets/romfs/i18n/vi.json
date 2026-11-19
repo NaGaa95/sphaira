@@ -350,6 +350,11 @@
     "- bis_user",
     "- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "Hiển thị các hệ thống tệp bis sau:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Hiển thị nội dung hệ thống",
   "Shows the system contents folder.": "Hiển thị thư mục nội dung hệ thống.",
   "Show user contents": "Hiển thị nội dung người dùng",

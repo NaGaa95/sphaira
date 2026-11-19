@@ -333,6 +333,11 @@
     "- bis_用户",
     "- bis_系统"
   ],
+  "bis_fs_user_system_info": [
+    "显示以下bis文件系统:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "显示系统内容",
   "Shows the system contents folder.": "显示系统内容文件夹。",
   "Show user contents": "显示用户内容",

@@ -73,8 +73,14 @@ Result GetApplicationControlData(NsApplicationControlSource source, u64 app_id, 
     Result rc = MAKERESULT(Module_Libnx, LibnxError_NotFound);
 
     if constexpr (platform::IsSwitch2) {
-        u32 unk{};
-        rc = nsGetApplicationControlData2(source, app_id, data, sizeof(*data), 1, 0, &size, &unk);
+        // flag 0 asks for the 256x256 icon, 1 for the 174x174 one.
+        for (const u8 flag : {0, 1}) {
+            u32 unk{};
+            rc = nsGetApplicationControlData2(source, app_id, data, sizeof(*data), flag, 0, &size, &unk);
+            if (R_SUCCEEDED(rc) && size > sizeof(data->nacp)) {
+                break;
+            }
+        }
     }
 
     if (R_FAILED(rc)) {

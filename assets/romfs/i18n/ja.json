@@ -342,6 +342,11 @@
     "以下のBISファイルシステムを表示します:",
     "- bis_calibration_file\n- bis_safe_mode\n- bis_user\n- bis_system"
   ],
+  "bis_fs_user_system_info": [
+    "以下のBISファイルシステムを表示します:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "システムコンテンツ",
   "Shows the system contents folder.": [
     "- FTP\n名前: contents_system\n",

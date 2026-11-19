@@ -1,0 +1,13 @@
+diff --git a/src/platform/nx/vfs_nx.c b/src/platform/nx/vfs_nx.c
+index 410e40a..457b273 100644
+--- a/src/platform/nx/vfs_nx.c
++++ b/src/platform/nx/vfs_nx.c
+@@ -361,8 +361,6 @@ struct MountEntry {
+ };
+ 
+ static const struct MountEntry BIS_NAMES[] = {
+-    { "bis_calibration_file", FsBisPartitionId_CalibrationFile },
+-    { "bis_safe_mode", FsBisPartitionId_SafeMode },
+     { "bis_user", FsBisPartitionId_User },
+     { "bis_system", FsBisPartitionId_System },
+ };

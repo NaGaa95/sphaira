@@ -410,6 +410,16 @@ if (ENABLE_LIBUSBDVD)
 endif()
 
 if (ENABLE_FTPSRV)
+    # Switch 2 only mounts the user and system bis partitions.
+    set(ftpsrv_switch2_patch)
+    if (SWITCH2)
+        set(ftpsrv_switch2_patch COMMAND ${CMAKE_COMMAND}
+            -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+            -DPATCH=${CMAKE_SOURCE_DIR}/cmake/patches/ftpsrv-switch2-bis.patch
+            -P ${CMAKE_SOURCE_DIR}/cmake/apply_patch.cmake
+        )
+    endif()
+
     FetchContent_Declare(ftpsrv
         GIT_REPOSITORY https://github.com/ITotalJustice/ftpsrv.git
         GIT_TAG 7c82402
@@ -418,6 +428,7 @@ if (ENABLE_FTPSRV)
             -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
             -DPATCH=${CMAKE_SOURCE_DIR}/cmake/patches/ftpsrv-upload-callback.patch
             -P ${CMAKE_SOURCE_DIR}/cmake/apply_patch.cmake
+        ${ftpsrv_switch2_patch}
     )
 
     FetchContent_MakeAvailable(ftpsrv)

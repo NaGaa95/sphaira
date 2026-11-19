@@ -2192,12 +2192,12 @@ App::App(const char* argv0) {
         }
         #endif // ENABLE_DEVOPTAB_SMB2
 
-        if (platform::SupportsGames) {
+        {
             SCOPED_TIMESTAMP("game init");
             devoptab::MountGameAll();
         }
 
-        if (platform::SupportsNandAccess) {
+        {
             SCOPED_TIMESTAMP("fatfs init");
             devoptab::MountFatfsAll();
         }
@@ -2633,12 +2633,9 @@ void App::DisplayAdvancedOptions(bool left_side) {
                 "You can enable installing from here."));
     }
 
-    // only games and game cards are exported.
-    if (platform::SupportsGames || platform::SupportsGameCard) {
-        options->Add<ui::SidebarEntryCallback>("Export options"_i18n, [left_side](){
-            App::DisplayDumpOptions(left_side);
-        },  "Change the export options."_i18n);
-    }
+    options->Add<ui::SidebarEntryCallback>("Export options"_i18n, [left_side](){
+        App::DisplayDumpOptions(left_side);
+    },  "Change the export options."_i18n);
 }
 
 void App::DisplayInstallOptions(bool left_side) {
@@ -2740,6 +2737,7 @@ void App::DisplayDumpOptions(bool left_side) {
     auto options = std::make_unique<ui::Sidebar>("Export Options"_i18n, left_side ? ui::Sidebar::Side::LEFT : ui::Sidebar::Side::RIGHT);
     ON_SCOPE_EXIT(App::Push(std::move(options)));
 
+#ifdef ENABLE_NSZ
     ui::SidebarEntryArray::Items nsz_level_items;
     for (auto& e : NSZ_COMPRESS_LEVEL_OPTIONS) {
         nsz_level_items.emplace_back(i18n::get(e.name));
@@ -2754,6 +2752,7 @@ void App::DisplayDumpOptions(bool left_side) {
     for (auto& e : NSZ_COMPRESS_BLOCK_OPTIONS) {
         nsz_block_items.emplace_back(i18n::get(e.name));
     }
+#endif // ENABLE_NSZ
 
     options->Add<ui::SidebarEntryBool>(
         "Fix export filenames"_i18n, App::GetApp()->m_dump_fix_filenames,
@@ -2770,28 +2769,33 @@ void App::DisplayDumpOptions(bool left_side) {
             "Disabling this would use /name.xci"
         )
     );
-    options->Add<ui::SidebarEntryBool>(
-        "Append folder with .xci"_i18n, App::GetApp()->m_dump_append_folder_with_xci,
-        i18n::get("xci_folder_info",
-            "XCI dumps will name the folder with the .xci extension.\n"
-            "For example, /name.xci/name.xci\n\n"
-            "Some devices only function is the xci folder is named exactly the same as the xci."
-        )
-    );
-    options->Add<ui::SidebarEntryBool>(
-        "Trim XCI"_i18n, App::GetApp()->m_dump_trim_xci,
-        "Removes the unused data at the end of the XCI, making the output smaller."_i18n
-    );
-    options->Add<ui::SidebarEntryBool>(
-        "Label trimmed XCI"_i18n, App::GetApp()->m_dump_label_trim_xci,
-        "Names the trimmed xci.\n"
-        "For example, /name/name (trimmed).xci"_i18n
-    );
-    options->Add<ui::SidebarEntryBool>(
-        "Convert to common ticket"_i18n, App::GetApp()->m_dump_convert_to_common_ticket,
-        "Converts personalised ticket to a fake common ticket."_i18n
-    );
+    if (platform::SupportsGameCard) {
+        options->Add<ui::SidebarEntryBool>(
+            "Append folder with .xci"_i18n, App::GetApp()->m_dump_append_folder_with_xci,
+            i18n::get("xci_folder_info",
+                "XCI dumps will name the folder with the .xci extension.\n"
+                "For example, /name.xci/name.xci\n\n"
+                "Some devices only function is the xci folder is named exactly the same as the xci."
+            )
+        );
+        options->Add<ui::SidebarEntryBool>(
+            "Trim XCI"_i18n, App::GetApp()->m_dump_trim_xci,
+            "Removes the unused data at the end of the XCI, making the output smaller."_i18n
+        );
+        options->Add<ui::SidebarEntryBool>(
+            "Label trimmed XCI"_i18n, App::GetApp()->m_dump_label_trim_xci,
+            "Names the trimmed xci.\n"
+            "For example, /name/name (trimmed).xci"_i18n
+        );
+    }
+    if (platform::SupportsKeyDerivation) {
+        options->Add<ui::SidebarEntryBool>(
+            "Convert to common ticket"_i18n, App::GetApp()->m_dump_convert_to_common_ticket,
+            "Converts personalised ticket to a fake common ticket."_i18n
+        );
+    }
 
+#ifdef ENABLE_NSZ
     options->Add<ui::SidebarEntryArray>("NSZ level"_i18n, nsz_level_items, [](s64& index_out){
         App::GetApp()->m_nsz_compress_level.Set(index_out);
     }, App::GetApp()->m_nsz_compress_level.Get(),
@@ -2835,6 +2839,7 @@ void App::DisplayDumpOptions(bool left_side) {
         "Sets the size of each block. The smaller the size, the faster the random access is at the cost of compression ratio."_i18n
     );
     block_size_option->Depends(App::GetApp()->m_nsz_compress_block, "NSZ block compression is disabled."_i18n);
+#endif // ENABLE_NSZ
 }
 
 void App::DisplayFtpOptions(bool left_side) {
@@ -2898,7 +2903,7 @@ void App::DisplayFtpOptions(bool left_side) {
         );
     }
 
-    if (platform::SupportsNandAccess) {
+    if (platform::SupportsAllNandPartitions) {
         options->Add<ui::SidebarEntryBool>(
             "Show bis storage"_i18n, App::GetApp()->m_ftp_show_bis_storage,
             i18n::get("bis_contents_info",
@@ -2930,40 +2935,45 @@ void App::DisplayFtpOptions(bool left_side) {
                 "- bis_system"
             )
         );
-    }
-
-    if (platform::SupportsContentStorageMounts) {
+    } else {
         options->Add<ui::SidebarEntryBool>(
-            "Show system contents"_i18n, App::GetApp()->m_ftp_show_content_system,
-            "Shows the system contents folder."_i18n
-        );
-
-        options->Add<ui::SidebarEntryBool>(
-            "Show user contents"_i18n, App::GetApp()->m_ftp_show_content_user,
-            "Shows the user contents folder."_i18n
-        );
-
-        options->Add<ui::SidebarEntryBool>(
-            "Show microSD contents"_i18n, App::GetApp()->m_ftp_show_content_sd,
-            i18n::get("microsd_contents_info",
-                "Shows the microSD contents folder.\n\n"
-                "NOTE: This is not the normal microSD card storage, it is instead "
-                "the location where NCA's are stored. The normal microSD card is always mounted."
+            "Show bis file systems"_i18n, App::GetApp()->m_ftp_show_bis_fs,
+            i18n::get("bis_fs_user_system_info",
+                "Shows the following bis file systems:\n"
+                "- bis_user\n"
+                "- bis_system"
             )
         );
     }
 
-    if (platform::SupportsGames) {
-        options->Add<ui::SidebarEntryBool>(
-            "Show games"_i18n, App::GetApp()->m_ftp_show_games,
-            i18n::get("games_ftp_info",
-                "Shows the games folder.\n\n"
-                "This folder contains all of your installed games, allowing you to create "
-                "backups over FTP!\n\n"
-                "NOTE: This folder is read-only. You cannot delete games over FTP."
-            )
-        );
-    }
+    options->Add<ui::SidebarEntryBool>(
+        "Show system contents"_i18n, App::GetApp()->m_ftp_show_content_system,
+        "Shows the system contents folder."_i18n
+    );
+
+    options->Add<ui::SidebarEntryBool>(
+        "Show user contents"_i18n, App::GetApp()->m_ftp_show_content_user,
+        "Shows the user contents folder."_i18n
+    );
+
+    options->Add<ui::SidebarEntryBool>(
+        "Show microSD contents"_i18n, App::GetApp()->m_ftp_show_content_sd,
+        i18n::get("microsd_contents_info",
+            "Shows the microSD contents folder.\n\n"
+            "NOTE: This is not the normal microSD card storage, it is instead "
+            "the location where NCA's are stored. The normal microSD card is always mounted."
+        )
+    );
+
+    options->Add<ui::SidebarEntryBool>(
+        "Show games"_i18n, App::GetApp()->m_ftp_show_games,
+        i18n::get("games_ftp_info",
+            "Shows the games folder.\n\n"
+            "This folder contains all of your installed games, allowing you to create "
+            "backups over FTP!\n\n"
+            "NOTE: This folder is read-only. You cannot delete games over FTP."
+        )
+    );
 
     if (platform::SupportsInstall) {
         options->Add<ui::SidebarEntryBool>(
@@ -3033,38 +3043,34 @@ void App::DisplayMtpOptions(bool left_side) {
         "Shows the microSD card album folder."_i18n
     );
 
-    if (platform::SupportsContentStorageMounts) {
-        options->Add<ui::SidebarEntryBool>(
-            "Show microSD contents"_i18n, App::GetApp()->m_mtp_show_content_sd,
-            i18n::get("microsd_contents_info",
-                "Shows the microSD contents folder.\n\n"
-                "NOTE: This is not the normal microSD card storage, it is instead "
-                "the location where NCA's are stored. The normal microSD card is always mounted."
-            )
-        );
+    options->Add<ui::SidebarEntryBool>(
+        "Show microSD contents"_i18n, App::GetApp()->m_mtp_show_content_sd,
+        i18n::get("microsd_contents_info",
+            "Shows the microSD contents folder.\n\n"
+            "NOTE: This is not the normal microSD card storage, it is instead "
+            "the location where NCA's are stored. The normal microSD card is always mounted."
+        )
+    );
 
-        options->Add<ui::SidebarEntryBool>(
-            "Show system contents"_i18n, App::GetApp()->m_mtp_show_content_system,
-            "Shows the system contents folder."_i18n
-        );
+    options->Add<ui::SidebarEntryBool>(
+        "Show system contents"_i18n, App::GetApp()->m_mtp_show_content_system,
+        "Shows the system contents folder."_i18n
+    );
 
-        options->Add<ui::SidebarEntryBool>(
-            "Show user contents"_i18n, App::GetApp()->m_mtp_show_content_user,
-            "Shows the user contents folder."_i18n
-        );
-    }
+    options->Add<ui::SidebarEntryBool>(
+        "Show user contents"_i18n, App::GetApp()->m_mtp_show_content_user,
+        "Shows the user contents folder."_i18n
+    );
 
-    if (platform::SupportsGames) {
-        options->Add<ui::SidebarEntryBool>(
-            "Show games"_i18n, App::GetApp()->m_mtp_show_games,
-            i18n::get("games_mtp_info",
-                "Shows the games folder.\n\n"
-                "This folder contains all of your installed games, allowing you to create "
-                "backups over MTP!\n\n"
-                "NOTE: This folder is read-only. You cannot delete games over MTP."
-            )
-        );
-    }
+    options->Add<ui::SidebarEntryBool>(
+        "Show games"_i18n, App::GetApp()->m_mtp_show_games,
+        i18n::get("games_mtp_info",
+            "Shows the games folder.\n\n"
+            "This folder contains all of your installed games, allowing you to create "
+            "backups over MTP!\n\n"
+            "NOTE: This folder is read-only. You cannot delete games over MTP."
+        )
+    );
 
     if (platform::SupportsInstall) {
         options->Add<ui::SidebarEntryBool>(

@@ -350,6 +350,11 @@
     "- bis_gebruiker",
     "- bis_systeem"
   ],
+  "bis_fs_user_system_info": [
+    "Toont de volgende bis-bestandssystemen:",
+    "- bis_user",
+    "- bis_system"
+  ],
   "Show system contents": "Systeeminhoud weergeven",
   "Shows the system contents folder.": "Toont de map met systeeminhoud.",
   "Show user contents": "Toon gebruikersinhoud",
