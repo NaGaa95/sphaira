@@ -157,6 +157,12 @@ public:
     void Update();
     void Poll();
 
+#if defined(__SWITCH2__)
+    void UpdateJoyConMouse(HidTouchScreenState& state);
+    auto IsJoyConMouseShown() const -> bool;
+    void DrawJoyConMouse();
+#endif
+
     // void DrawElement(float x, float y, float w, float h, ui::ThemeEntryID id);
     auto LoadElementImage(std::string_view value) -> ElementEntry;
     auto LoadElementColour(std::string_view value) -> ElementEntry;
@@ -276,6 +282,13 @@ public:
     NVGcontext* vg{};
     PadState m_pad{};
     TouchInfo m_touch_info{};
+#if defined(__SWITCH2__)
+    PadPointer m_pointer{};
+    PadState m_pointer_pad{};
+    bool m_pointer_open{};
+    bool m_pointer_down{};
+    u64 m_pointer_moved_at{};
+#endif
     Controller m_controller{};
     KeyboardState m_keyboard{};
     std::vector<ThemeMeta> m_theme_meta_entries;

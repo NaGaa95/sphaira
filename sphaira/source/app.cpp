@@ -1248,12 +1248,34 @@ void App::ExitRestart() {
     Exit();
 }
 
+#if defined(__SWITCH2__)
+namespace {
+
+// how long the cursor shows after the joy-con mouse last moved.
+constexpr u64 JOYCON_MOUSE_SHOWN_NS = 2'000'000'000;
+
+// the click of the mouse joy-con.
+auto JoyConMouseClick(PadPointerSide side) -> u64 {
+    switch (side) {
+        case PadPointerSide_Left: return HidNpadButton_ZL;
+        case PadPointerSide_Right: return HidNpadButton_ZR;
+        default: return HidNpadButton_ZL | HidNpadButton_ZR;
+    }
+}
+
+} // namespace
+#endif
+
 void App::Poll() {
     m_controller.Reset();
 
     HidTouchScreenState state{};
     hidGetTouchScreenStates(&state, 1);
     m_touch_info.is_clicked = false;
+
+#if defined(__SWITCH2__)
+    UpdateJoyConMouse(state);
+#endif
 
     // todo:
     #if 0
@@ -1342,9 +1364,16 @@ void App::Poll() {
     if (!m_touch_info.is_touching && !m_touch_info.is_clicked) {
         // controller.
         padUpdate(&m_pad);
-        kdown |= padGetButtonsDown(&m_pad);
-        kheld |= padGetButtons(&m_pad);
-        kup |= padGetButtonsUp(&m_pad);
+        u64 claimed = 0;
+#if defined(__SWITCH2__)
+        // while the cursor shows, the mouse joy-con's trigger is the mouse's only.
+        if (IsJoyConMouseShown()) {
+            claimed = JoyConMouseClick(m_pointer.side);
+        }
+#endif
+        kdown |= padGetButtonsDown(&m_pad) & ~claimed;
+        kheld |= padGetButtons(&m_pad) & ~claimed;
+        kup |= padGetButtonsUp(&m_pad) & ~claimed;
 
         // keyboard.
         m_keyboard.Update();
@@ -1358,6 +1387,76 @@ void App::Poll() {
     m_controller.m_kup = kup;
     m_controller.UpdateButtonHeld(static_cast<u64>(Button::ANY_DIRECTION), m_delta_time);
 }
+
+#if defined(__SWITCH2__)
+// a joy-con set down on a surface is a mouse: its pointer moves a cursor and
+// its ZL or ZR is a touch at the cursor. a click counts only while the cursor
+// shows, so a joy-con in hand keeps its triggers.
+void App::UpdateJoyConMouse(HidTouchScreenState& state) {
+    if (!m_pointer_open) {
+        return;
+    }
+
+    padUpdate(&m_pointer_pad);
+    padPointerUpdate(&m_pointer, &m_pointer_pad);
+    if (!m_pointer.active) {
+        m_pointer_down = false;
+        m_pointer_moved_at = 0;
+        return;
+    }
+
+    if (m_pointer.delta_x || m_pointer.delta_y) {
+        m_pointer_moved_at = armTicksToNs(armGetSystemTick());
+    }
+
+    const auto click = JoyConMouseClick(m_pointer.side);
+    if (!(padGetButtons(&m_pointer_pad) & click)) {
+        m_pointer_down = false;
+    } else if ((padGetButtonsDown(&m_pointer_pad) & click) && IsJoyConMouseShown()) {
+        m_pointer_down = true;
+    }
+
+    if (m_pointer_down && !state.count) {
+        state.count = 1;
+        state.touches[0].x = m_pointer.x;
+        state.touches[0].y = m_pointer.y;
+    }
+}
+
+auto App::IsJoyConMouseShown() const -> bool {
+    if (!m_pointer_open || !m_pointer.active) {
+        return false;
+    }
+
+    return m_pointer_down || (m_pointer_moved_at && armTicksToNs(armGetSystemTick()) - m_pointer_moved_at < JOYCON_MOUSE_SHOWN_NS);
+}
+
+void App::DrawJoyConMouse() {
+    if (!IsJoyConMouseShown()) {
+        return;
+    }
+
+    const float x = m_pointer.x;
+    const float y = m_pointer.y;
+    nvgResetScissor(vg);
+
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, x - 1.5f, y - 2.5f);
+    nvgLineTo(vg, x - 1.5f, y + 21.f);
+    nvgLineTo(vg, x + 16.f, y + 15.5f);
+    nvgClosePath(vg);
+    nvgFillColor(vg, nvgRGBA(20, 24, 32, 235));
+    nvgFill(vg);
+
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, x, y);
+    nvgLineTo(vg, x, y + 17.f);
+    nvgLineTo(vg, x + 12.5f, y + 13.f);
+    nvgClosePath(vg);
+    nvgFillColor(vg, nvgRGBA(250, 252, 255, 255));
+    nvgFill(vg);
+}
+#endif
 
 void App::Update() {
     // loop background music if it has finished.
@@ -1446,6 +1545,10 @@ void App::Draw() {
     ui::InstallQueue::Get().Draw(vg, &m_theme);
 #endif
     m_notif_manager.Draw(vg, &m_theme);
+
+#if defined(__SWITCH2__)
+    DrawJoyConMouse();
+#endif
 
     nvgResetTransform(vg);
     nvgEndFrame(this->vg);
@@ -2119,6 +2222,16 @@ App::App(const char* argv0) {
             padConfigureInput(8, HidNpadStyleSet_NpadStandard);
             // padInitializeDefault(&m_pad);
             padInitializeAny(&m_pad);
+
+#if defined(__SWITCH2__)
+            // read every frame, also while a touch holds m_pad.
+            padInitializeAny(&m_pointer_pad);
+            const auto rc = padPointerInitialize(&m_pointer, SCREEN_WIDTH, SCREEN_HEIGHT);
+            if (R_FAILED(rc)) {
+                log_write("[HID] padPointerInitialize() failed: 0x%X\n", rc);
+            }
+            m_pointer_open = R_SUCCEEDED(rc);
+#endif
 
             m_keyboard.Init(KEYBOARD_BUTTON_MAP);
         }
@@ -3118,6 +3231,15 @@ App::~App() {
                 libhaze::Exit();
             }
 #endif // ENABLE_LIBHAZE
+
+#if defined(__SWITCH2__)
+            // the next homebrew runs in this process, and hid would keep writing
+            // to the joy-con mouse memory.
+            if (m_pointer_open) {
+                SCOPED_TIMESTAMP("joy-con mouse exit");
+                padPointerExit(&m_pointer);
+            }
+#endif
 
 #ifdef ENABLE_LIBUSBHSFS
             {
