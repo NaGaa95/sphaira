@@ -41,9 +41,100 @@ constexpr u16 DEVICE_SPEED[] = {
     [UsbDeviceSpeed_Super] = 0x400,
 };
 
+#if defined(__SWITCH2__)
+// Switch 2's usb:ds: the interface's AppendConfigurationData is command 6 and
+// the control events usbDsRegisterInterface asks for fail, so the interface
+// and its endpoints are registered here, as in libhaze's patch.
+constexpr const char* PRODUCT_NAME = "Nintendo Switch 2";
+constexpr u8 INTERFACE_SLOTS = 4;
+
+UsbDsInterface g_interface;
+UsbDsEndpoint g_endpoints[2];
+u32 g_endpoint_count;
+
+Result RegisterInterface(UsbDsInterface** out) {
+    Service* ds = usbDsGetServiceSession();
+    Result rc = 0;
+    for (u8 slot = 0; slot < INTERFACE_SLOTS; slot++) {
+        g_interface = {};
+        serviceAssumeDomain(ds);
+        rc = serviceDispatchIn(ds, 1, slot, .out_num_objects = 1, .out_objects = &g_interface.s);
+        if (R_SUCCEEDED(rc)) {
+            g_interface.initialized = true;
+            g_interface.interface_index = slot;
+            *out = &g_interface;
+            R_SUCCEED();
+        }
+    }
+    return rc;
+}
+
+Result AppendConfigurationData(UsbDsInterface* interface, UsbDeviceSpeed speed, const void* buffer, size_t size) {
+    const u32 in = speed;
+    serviceAssumeDomain(&interface->s);
+    return serviceDispatchIn(&interface->s, 6, in,
+        .buffer_attrs = { SfBufferAttr_HipcMapAlias | SfBufferAttr_In },
+        .buffers = { { buffer, size } });
+}
+
+Result RegisterEndpoint(UsbDsInterface* interface, UsbDsEndpoint** out, u8 address) {
+    auto endpoint = &g_endpoints[g_endpoint_count];
+    *endpoint = {};
+    serviceAssumeDomain(&interface->s);
+    R_TRY(serviceDispatchIn(&interface->s, 0, address, .out_num_objects = 1, .out_objects = &endpoint->s));
+    endpoint->initialized = true;
+    g_endpoint_count++;
+
+    Handle event = INVALID_HANDLE;
+    serviceAssumeDomain(&endpoint->s);
+    R_TRY(serviceDispatch(&endpoint->s, 2, .out_handle_attrs = { SfOutHandleAttr_HipcCopy }, .out_handles = &event));
+    eventLoadRemote(&endpoint->CompletionEvent, event, false);
+
+    *out = endpoint;
+    R_SUCCEED();
+}
+
+// usbDsExit only closes the objects libounce registered.
+void ReleaseObjects() {
+    for (u32 i = 0; i < g_endpoint_count; i++) {
+        auto endpoint = &g_endpoints[i];
+        usbDsEndpoint_Cancel(endpoint);
+        eventClose(&endpoint->CompletionEvent);
+        serviceAssumeDomain(&endpoint->s);
+        serviceClose(&endpoint->s);
+        endpoint->initialized = false;
+    }
+    g_endpoint_count = 0;
+
+    if (g_interface.initialized) {
+        serviceAssumeDomain(&g_interface.s);
+        serviceClose(&g_interface.s);
+        g_interface.initialized = false;
+    }
+}
+#else
+constexpr const char* PRODUCT_NAME = "Nintendo Switch";
+
+Result RegisterInterface(UsbDsInterface** out) {
+    return usbDsRegisterInterface(out);
+}
+
+Result AppendConfigurationData(UsbDsInterface* interface, UsbDeviceSpeed speed, const void* buffer, size_t size) {
+    return usbDsInterface_AppendConfigurationData(interface, speed, buffer, size);
+}
+
+Result RegisterEndpoint(UsbDsInterface* interface, UsbDsEndpoint** out, u8 address) {
+    return usbDsInterface_RegisterEndpoint(interface, out, address);
+}
+
+void ReleaseObjects() {
+}
+#endif
+
 } // namespace
 
 UsbDs::~UsbDs() {
+    ReleaseObjects();
     usbDsExit();
 }
 
@@ -63,7 +154,7 @@ Result UsbDs::Init() {
     // Send manufacturer
     R_TRY(usbDsAddUsbStringDescriptor(&iManufacturer, "Nintendo"));
     // Send product
-    R_TRY(usbDsAddUsbStringDescriptor(&iProduct, "Nintendo Switch"));
+    R_TRY(usbDsAddUsbStringDescriptor(&iProduct, PRODUCT_NAME));
     // Send serial number
     R_TRY(usbDsAddUsbStringDescriptor(&iSerialNumber, serial_number.number));
 
@@ -156,7 +247,7 @@ Result UsbDs::Init() {
         .wBytesPerInterval = 0x00,
     };
 
-    R_TRY(usbDsRegisterInterface(&m_interface));
+    R_TRY(RegisterInterface(&m_interface));
 
     interface_descriptor.bInterfaceNumber = m_interface->interface_index;
     endpoint_descriptor_in.bEndpointAddress += interface_descriptor.bInterfaceNumber + 1;
@@ -165,29 +256,29 @@ Result UsbDs::Init() {
     // Full Speed Config
     endpoint_descriptor_in.wMaxPacketSize = DEVICE_SPEED[UsbDeviceSpeed_Full];
     endpoint_descriptor_out.wMaxPacketSize = DEVICE_SPEED[UsbDeviceSpeed_Full];
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, &interface_descriptor, USB_DT_INTERFACE_SIZE));
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, &endpoint_descriptor_in, USB_DT_ENDPOINT_SIZE));
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, &endpoint_descriptor_out, USB_DT_ENDPOINT_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, &interface_descriptor, USB_DT_INTERFACE_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, &endpoint_descriptor_in, USB_DT_ENDPOINT_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Full, &endpoint_descriptor_out, USB_DT_ENDPOINT_SIZE));
 
     // High Speed Config
     endpoint_descriptor_in.wMaxPacketSize = DEVICE_SPEED[UsbDeviceSpeed_High];
     endpoint_descriptor_out.wMaxPacketSize = DEVICE_SPEED[UsbDeviceSpeed_High];
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_High, &interface_descriptor, USB_DT_INTERFACE_SIZE));
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_High, &endpoint_descriptor_in, USB_DT_ENDPOINT_SIZE));
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_High, &endpoint_descriptor_out, USB_DT_ENDPOINT_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_High, &interface_descriptor, USB_DT_INTERFACE_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_High, &endpoint_descriptor_in, USB_DT_ENDPOINT_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_High, &endpoint_descriptor_out, USB_DT_ENDPOINT_SIZE));
 
     // Super Speed Config
     endpoint_descriptor_in.wMaxPacketSize = DEVICE_SPEED[UsbDeviceSpeed_Super];
     endpoint_descriptor_out.wMaxPacketSize = DEVICE_SPEED[UsbDeviceSpeed_Super];
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &interface_descriptor, USB_DT_INTERFACE_SIZE));
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &endpoint_descriptor_in, USB_DT_ENDPOINT_SIZE));
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &endpoint_companion, USB_DT_SS_ENDPOINT_COMPANION_SIZE));
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &endpoint_descriptor_out, USB_DT_ENDPOINT_SIZE));
-    R_TRY(usbDsInterface_AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &endpoint_companion, USB_DT_SS_ENDPOINT_COMPANION_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &interface_descriptor, USB_DT_INTERFACE_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &endpoint_descriptor_in, USB_DT_ENDPOINT_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &endpoint_companion, USB_DT_SS_ENDPOINT_COMPANION_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &endpoint_descriptor_out, USB_DT_ENDPOINT_SIZE));
+    R_TRY(AppendConfigurationData(m_interface, UsbDeviceSpeed_Super, &endpoint_companion, USB_DT_SS_ENDPOINT_COMPANION_SIZE));
 
     //Setup endpoints.
-    R_TRY(usbDsInterface_RegisterEndpoint(m_interface, &m_endpoints[UsbSessionEndpoint_In], endpoint_descriptor_in.bEndpointAddress));
-    R_TRY(usbDsInterface_RegisterEndpoint(m_interface, &m_endpoints[UsbSessionEndpoint_Out], endpoint_descriptor_out.bEndpointAddress));
+    R_TRY(RegisterEndpoint(m_interface, &m_endpoints[UsbSessionEndpoint_In], endpoint_descriptor_in.bEndpointAddress));
+    R_TRY(RegisterEndpoint(m_interface, &m_endpoints[UsbSessionEndpoint_Out], endpoint_descriptor_out.bEndpointAddress));
 
     R_TRY(usbDsInterface_EnableInterface(m_interface));
     R_TRY(usbDsEnable());
