@@ -46,7 +46,7 @@ constexpr auto OFFICIAL_STORE_URL = "https://switch.cdn.fortheusers.org";
 // the store the menu starts with: the HB App Store lists Switch 1 homebrew,
 // brewstore's catalog Switch 2 homebrew.
 constexpr auto BREWSTORE_NAME = "Brewstore";
-constexpr auto BREWSTORE_URL = "https://raw.githubusercontent.com/HerXayah/brewstore-repo/main/packages.json";
+constexpr auto BREWSTORE_URL = "https://raw.githubusercontent.com/HerXayah/brewstore-repo/main/catalog.json";
 constexpr auto BUILTIN_STORE_NAME = platform::IsSwitch2 ? BREWSTORE_NAME : OFFICIAL_STORE_NAME;
 constexpr auto BUILTIN_STORE_URL = platform::IsSwitch2 ? BREWSTORE_URL : OFFICIAL_STORE_URL;
 constexpr std::size_t MAX_STORE_SOURCES = 32;
@@ -309,8 +309,6 @@ void from_json(yyjson_val* json, Entry& e) {
         JSON_SET_STR(target);
         JSON_SET_UINT(published);
 
-        // brewstore's names for the icon and for the file an install leaves,
-        // the app's .nro for most.
         case cexprHash("icon"): {
             if (yyjson_is_str(val)) {
                 e.icon_url = yyjson_get_str(val);
@@ -322,36 +320,15 @@ void from_json(yyjson_val* json, Entry& e) {
                 if (marker.starts_with("sdmc:")) {
                     marker.remove_prefix(5);
                 }
-                if (marker.starts_with('/') && EndsWithCi(marker, ".nro")) {
-                    e.binary = marker;
-                }
+                e.marker = marker;
+            }
+        } break;
+        case cexprHash("stripPrefix"): {
+            if (yyjson_is_str(val)) {
+                e.strip_prefix = yyjson_get_str(val);
             }
         } break;
     );
-}
-
-auto from_json(const fs::FsPath& path, std::vector<appstore::Entry>& entries) -> bool {
-    yyjson_read_err error{};
-    auto document = yyjson_read_file(path, YYJSON_READ_NOFLAG, nullptr, &error);
-    R_UNLESS(document, false);
-    ON_SCOPE_EXIT(yyjson_doc_free(document));
-
-    const auto root = yyjson_doc_get_root(document);
-    R_UNLESS(root && yyjson_is_obj(root), false);
-    const auto packages = yyjson_obj_get(root, "packages");
-    R_UNLESS(packages && yyjson_is_arr(packages), false);
-
-    const auto count = yyjson_arr_size(packages);
-    R_UNLESS(count <= MAX_STORE_PACKAGES, false);
-    entries.clear();
-    entries.resize(count);
-
-    size_t index{}, max{};
-    yyjson_val* package{};
-    yyjson_arr_foreach(packages, index, max, package) {
-        from_json(package, entries[index]);
-    }
-    return true;
 }
 
 auto IsSafePackageName(std::string_view name) -> bool {
@@ -365,7 +342,7 @@ auto IsSafePackageName(std::string_view name) -> bool {
 }
 
 auto IsSafeManifestPath(std::string_view path) -> bool {
-    if (path.empty() || path.size() >= PATH_MAX || path.find('\\') != std::string_view::npos) {
+    if (path.empty() || path.size() >= PATH_MAX || path.find_first_of("\\:\r\n") != std::string_view::npos) {
         return false;
     }
 
@@ -377,6 +354,59 @@ auto IsSafeManifestPath(std::string_view path) -> bool {
         && !path.starts_with("../")
         && !path.ends_with("/..")
         && path.find("/../") == std::string_view::npos;
+}
+
+auto IsSupportedReleaseAsset(std::string_view name) -> bool {
+    return EndsWithCi(name, ".nro") || EndsWithCi(name, ".zip");
+}
+
+auto from_json(const fs::FsPath& path, std::vector<appstore::Entry>& entries) -> bool {
+    auto document = yyjson_read_file(path, YYJSON_READ_NOFLAG, nullptr, nullptr);
+    R_UNLESS(document, false);
+    ON_SCOPE_EXIT(yyjson_doc_free(document));
+
+    const auto root = yyjson_doc_get_root(document);
+    R_UNLESS(root && yyjson_is_obj(root), false);
+    const auto packages = yyjson_obj_get(root, "packages");
+    R_UNLESS(packages && yyjson_is_arr(packages), false);
+
+    const auto count = yyjson_arr_size(packages);
+    R_UNLESS(count <= MAX_STORE_PACKAGES, false);
+    const auto schema = yyjson_obj_get(root, "schema_version");
+    if (schema) {
+        const auto declared_count = yyjson_obj_get(root, "count");
+        R_UNLESS(yyjson_is_uint(schema) && yyjson_get_uint(schema) == 1, false);
+        R_UNLESS(yyjson_is_uint(declared_count) && yyjson_get_uint(declared_count) == count, false);
+    }
+
+    entries.clear();
+    entries.reserve(count);
+    size_t index{}, max{};
+    yyjson_val* package{};
+    yyjson_arr_foreach(packages, index, max, package) {
+        Entry entry;
+        from_json(package, entry);
+        if (schema) {
+            const auto tag = yyjson_get_str(yyjson_obj_get(package, "release_tag"));
+            const auto valid_hash = entry.sha256.size() == 64 && std::ranges::all_of(entry.sha256, [](unsigned char c){
+                return std::isxdigit(c);
+            });
+            if (!tag || !*tag || !entry.download_url.starts_with("https://") ||
+                !valid_hash || !IsSafePackageName(entry.asset) || !IsSupportedReleaseAsset(entry.asset)) {
+                continue;
+            }
+            entry.release_tag = tag;
+            entry.release_asset = true;
+        }
+
+        if (!entry.marker.starts_with('/') || !IsSafeManifestPath(entry.marker)) {
+            entry.marker.clear();
+        } else if (EndsWithCi(entry.marker, ".nro")) {
+            entry.binary = entry.marker;
+        }
+        entries.emplace_back(std::move(entry));
+    }
+    return true;
 }
 
 auto ParseManifest(std::span<const char> view) -> ManifestEntries {
@@ -922,6 +952,11 @@ auto ReleasesApiUrl(std::string_view url, std::string& out, bool& gitlab) -> boo
 }
 
 auto ResolveReleaseAsset(const Entry& e, ReleaseAsset& out) -> Result {
+    if (!e.release_tag.empty()) {
+        out = {e.asset, e.download_url, e.sha256};
+        R_SUCCEED();
+    }
+
     std::string api;
     bool gitlab{};
     R_UNLESS(ReleasesApiUrl(e.url, api, gitlab), Result_AppstoreNoReleaseAsset);
@@ -1083,14 +1118,17 @@ auto InstallReleaseApp(ProgressBox* pbox, const Entry& entry) -> Result {
     fs::FsPath target;
     R_UNLESS(ReleaseTarget(entry, target), Result_AppstoreFailedParseManifest);
 
-    pbox->NewTransfer("Downloading json"_i18n);
+    if (entry.release_tag.empty()) {
+        pbox->NewTransfer("Downloading json"_i18n);
+    }
     ReleaseAsset asset;
     R_TRY(ResolveReleaseAsset(entry, asset));
     R_TRY(pbox->ShouldExitResult());
 
-    // the sd card's root only takes a zip, as in brewstore.
+    R_UNLESS(IsSafePackageName(asset.name) && IsSupportedReleaseAsset(asset.name), Result_AppstoreNoReleaseAsset);
     const auto zip = EndsWithCi(asset.name, ".zip");
-    R_UNLESS(zip || std::strcmp(target, "/"), Result_AppstoreFailedParseManifest);
+    R_UNLESS(zip || std::strcmp(target, "/") ||
+        (!entry.release_tag.empty() && entry.marker == "/" + asset.name), Result_AppstoreFailedParseManifest);
 
     fs.DeleteFile(asset_out);
     ON_SCOPE_EXIT(fs.DeleteFile(asset_out));
@@ -1115,9 +1153,15 @@ auto InstallReleaseApp(ProgressBox* pbox, const Entry& entry) -> Result {
     // the files, from the sd card's root, as manifest.install lists them.
     std::vector<std::string> files;
     if (zip) {
-        // a zip for the sd card's root is extracted as it is.
         ZipLayout layout;
-        if (std::strcmp(target, "/")) {
+        if (!entry.strip_prefix.empty()) {
+            R_UNLESS(!entry.strip_prefix.starts_with('/') && IsSafeManifestPath(entry.strip_prefix),
+                Result_AppstoreFailedParseManifest);
+            layout.strip = entry.strip_prefix;
+            if (!layout.strip.ends_with('/')) {
+                layout.strip += '/';
+            }
+        } else if (std::strcmp(target, "/")) {
             std::vector<std::string> names;
             R_TRY(ReadZipNames(asset_out, names));
             layout = GetZipLayout(names);
@@ -1130,7 +1174,8 @@ auto InstallReleaseApp(ProgressBox* pbox, const Entry& entry) -> Result {
                 return false;
             }
             file.remove_prefix(layout.strip.size());
-            if ((layout.sd_root && !StartsWithCi(file, "switch/")) || !IsSafeManifestPath(file)) {
+            if ((layout.sd_root && !StartsWithCi(file, "switch/")) || !IsSafeManifestPath(file) ||
+                file.starts_with('/') || file.size() + std::strlen(base) + 1 >= sizeof(path.s)) {
                 return false;
             }
 
@@ -1777,8 +1822,8 @@ void Menu::StartStoreDownload() {
     fs.CreateDirectoryRecursively(store_cache + "/icons");
     fs.CreateDirectoryRecursively(store_cache + "/banners");
     fs.CreateDirectoryRecursively(store_cache + "/includes");
-    m_repo_path = store_cache + "/repo.json";
     const auto repo_url = BuildRepoUrl(source);
+    m_repo_path = store_cache + (repo_url == BREWSTORE_URL ? "/catalog.json" : "/repo.json");
 
     const auto queued = curl::Api().ToFileAsync(
         curl::Url{repo_url},
@@ -2095,7 +2140,7 @@ void Menu::ScanHomebrew() {
             entry.author = "Unknown"_i18n;
         }
 
-        entry.release_asset = !entry.release.empty();
+        entry.release_asset |= !entry.release.empty();
         if (entry.release_asset) {
             if (entry.details.empty()) {
                 entry.details = entry.description;
@@ -2157,10 +2202,11 @@ void Menu::ScanHomebrew() {
         // if there is not a binary path, then we have to trust the info.json
         // this can result in applications being shown as installed even though they
         // are deleted, this includes sys-modules.
-        if (e.binary.empty() || e.binary == "none") {
+        const auto& marker = e.marker.empty() ? e.binary : e.marker;
+        if (marker.empty() || marker == "none") {
             ReadFromInfoJson(e);
         } else {
-            if (fs.FileExists(e.binary)) {
+            if (fs.FileExists(marker)) {
                 // first check the info.json
                 ReadFromInfoJson(e);
                 // if we get here, this means that we have the file, but not the .info file

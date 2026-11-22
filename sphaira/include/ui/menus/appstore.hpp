@@ -81,8 +81,11 @@ struct Entry {
     // asset, a .nro or a zip, installed into target.
     bool release_asset{};
     std::string release{}; // "latest" or a tag
+    std::string release_tag{};
     std::string asset{}; // optional, how the asset's name ends
     std::string target{}; // optional, /switch/<name> otherwise
+    std::string marker{};
+    std::string strip_prefix{};
     u64 published{}; // unix time of the release
 
     LazyImage image{};
