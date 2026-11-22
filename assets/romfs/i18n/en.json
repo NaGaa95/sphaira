@@ -1355,6 +1355,8 @@
   "Installing in the background": "Installing in the background",
   "Waiting": "Waiting",
   "Installing": "Installing",
+  "Already installing.": "Already installing.",
+  "Already waiting to install.": "Already waiting to install.",
   "Failed": "Failed",
   "Cancelled": "Cancelled",
   "Install queue": "Install queue",

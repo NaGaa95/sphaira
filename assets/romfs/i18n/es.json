@@ -1346,6 +1346,8 @@
   "Installing in the background": "Instalando en segundo plano",
   "Waiting": "En espera",
   "Installing": "Instalando",
+  "Already installing.": "Ya se está instalando.",
+  "Already waiting to install.": "Ya está en espera de instalación.",
   "Failed": "Fallido",
   "Cancelled": "Cancelado",
   "Install queue": "Cola de instalación",

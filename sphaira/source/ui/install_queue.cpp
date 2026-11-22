@@ -25,15 +25,16 @@ auto InstallQueue::Get() -> InstallQueue& {
     return queue;
 }
 
-void InstallQueue::Add(const std::string& name, int image, const ProgressBoxCallback& callback) {
+void InstallQueue::Add(const std::string& name, int image, const ProgressBoxCallback& callback, u64 key) {
     if (m_shutdown) {
         return;
     }
 
     const auto busy = IsBusy();
     auto& job = m_jobs.emplace_back(Job{name, image, callback});
+    job.key = key;
     job.id = m_next_id++;
-    log_write("[QUEUE] added %s (id %zu), busy: %u\n", name.c_str(), job.id, busy);
+    log_write("[QUEUE] added %s (id %zu, key %016lX), busy: %u\n", name.c_str(), job.id, job.key, busy);
 
     if (busy) {
         App::Notify(i18n::Reorder("Queued ", name) + " (" + std::to_string(GetPendingCount()) + ")");
@@ -198,6 +199,22 @@ auto InstallQueue::GetPendingCount() const -> size_t {
     return std::count_if(m_jobs.begin(), m_jobs.end(), [](const auto& e) {
         return e.state == State::Waiting;
     });
+}
+
+auto InstallQueue::GetPendingState(u64 key) const -> std::optional<State> {
+    if (!key) {
+        return std::nullopt;
+    }
+
+    const auto it = std::find_if(m_jobs.begin(), m_jobs.end(), [key](const auto& e) {
+        return e.key == key && (e.state == State::Waiting || e.state == State::Running);
+    });
+
+    if (it == m_jobs.end()) {
+        return std::nullopt;
+    }
+
+    return it->state;
 }
 
 auto InstallQueue::GetRunning() -> Job* {

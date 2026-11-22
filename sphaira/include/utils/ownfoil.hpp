@@ -46,6 +46,9 @@ void DeleteConfig(const std::string& uid);
 // an empty uid matches nothing, and a placeholder never matches a real uid.
 auto FindByUid(Configs& configs, const std::string& uid) -> Config*;
 
+// the shop spells an id as 16 hex digits, and yati compares the number.
+auto ParseId(const std::string& id) -> u64;
+
 // the one way a saved entry is ever created or changed.
 struct OwnfoilForm final : public ui::FormSidebar {
     using OnSaved = std::function<void(const Config&)>;

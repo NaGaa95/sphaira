@@ -9,6 +9,7 @@
 #include "i18n.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <cstdio>
 #include <minIni.h>
@@ -172,6 +173,10 @@ auto FindByUid(Configs& configs, const std::string& uid) -> Config* {
     });
 
     return it == configs.end() ? nullptr : &*it;
+}
+
+auto ParseId(const std::string& id) -> u64 {
+    return std::strtoull(id.c_str(), nullptr, 16);
 }
 
 } // namespace sphaira::ownfoil

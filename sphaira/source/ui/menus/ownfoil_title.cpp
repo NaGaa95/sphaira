@@ -5,6 +5,7 @@
 #include "ui/popup_multi_select.hpp"
 #include "ui/progress_box.hpp"
 #include "ui/install_queue.hpp"
+#include "ui/option_box.hpp"
 #include "yati/yati.hpp"
 #include "yati/source/http.hpp"
 
@@ -193,11 +194,6 @@ auto StripGameName(const std::string& name, const std::string& game) -> std::str
         return name;
     }
     return std::string{rest};
-}
-
-// the shop spells an id as 16 hex digits, and yati compares the number.
-auto ParseId(const std::string& id) -> u64 {
-    return std::strtoull(id.c_str(), nullptr, 16);
 }
 
 auto IsSpace(char c) -> bool {
@@ -970,6 +966,21 @@ void TitleMenu::Install() {
         return;
     }
 
+    // the id this page installs for: the game's title id, or a dlc's own. the
+    // queue and the catalog card both use it to recognise what is on its way.
+    const auto key = sphaira::ownfoil::ParseId(m_page.id);
+
+    // something for this page is already on its way: queueing a second copy
+    // would download and install it twice.
+    if (const auto state = InstallQueue::Get().GetPendingState(key)) {
+        App::Push<ui::OptionBox>(
+            *state == InstallQueue::State::Running
+                ? "Already installing."_i18n
+                : "Already waiting to install."_i18n,
+            "OK"_i18n);
+        return;
+    }
+
     // one file can carry several of the chosen apps, so they are gathered by
     // download: each file is fetched once and installs only what was chosen of it.
     struct Target {
@@ -997,10 +1008,10 @@ void TitleMenu::Install() {
     };
 
     if (m_page.dlc) {
-        add(m_page.download, ParseId(m_page.id));
+        add(m_page.download, sphaira::ownfoil::ParseId(m_page.id));
     } else {
         if (m_install_version >= 0 && m_install_version < static_cast<s64>(m_title.versions.size())) {
-            const auto game_id = ParseId(m_page.game_id);
+            const auto game_id = sphaira::ownfoil::ParseId(m_page.game_id);
             const auto& chosen = m_title.versions[m_install_version];
 
             // a game the console hasn't got needs its base game under any update.
@@ -1018,7 +1029,7 @@ void TitleMenu::Install() {
 
         for (size_t i = 0; i < m_install_dlc.size() && i < m_title.dlc.size(); i++) {
             if (m_install_dlc[i]) {
-                add(m_title.dlc[i].download, ParseId(m_title.dlc[i].app_id));
+                add(m_title.dlc[i].download, sphaira::ownfoil::ParseId(m_title.dlc[i].app_id));
             }
         }
     }
@@ -1049,7 +1060,7 @@ void TitleMenu::Install() {
         }
 
         R_SUCCEED();
-    });
+    }, key);
 }
 
 void TitleMenu::ShowAddons(const std::function<void()>& changed) {

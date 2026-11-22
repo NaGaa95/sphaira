@@ -94,6 +94,40 @@ auto GetCategoryActionHint() -> const std::string& {
     return hint;
 }
 
+// the id a card's page would queue: a dlc installs its own file, everything
+// else the game its card stands for.
+auto GetCardKey(const sphaira::ownfoil::api::ShopApp& app) -> u64 {
+    const auto dlc = app.type == sphaira::ownfoil::api::AppType::Dlc;
+    return sphaira::ownfoil::ParseId(dlc ? app.app_id : app.title_id);
+}
+
+// the install state over the card's top-right corner: the accent colour for
+// the one running, the second accent for the ones waiting their turn.
+void DrawInstallBadge(NVGcontext* vg, Theme* theme, const Vec4& card, u64 key) {
+    const auto state = InstallQueue::Get().GetPendingState(key);
+    if (!state) {
+        return;
+    }
+
+    const auto running = *state == InstallQueue::State::Running;
+    const auto text = running ? "Installing"_i18n : "Waiting"_i18n;
+    const auto colour = running ? ThemeEntryID_HIGHLIGHT_1 : ThemeEntryID_HIGHLIGHT_2;
+
+    constexpr float FONT = 18.f, PAD = 10.f, H = 26.f, MARGIN = 8.f;
+
+    // the label is translated, so measure it rather than guess a width a
+    // german or japanese translation would overrun.
+    nvgFontSize(vg, FONT);
+    float bounds[4];
+    gfx::textBounds(vg, 0.f, 0.f, bounds, text.c_str());
+    const auto w = std::min(bounds[2] - bounds[0] + PAD * 2.f, card.w - MARGIN * 2.f);
+
+    const Vec4 tag{card.x + card.w - w - MARGIN, card.y + MARGIN, w, H};
+    gfx::drawRect(vg, tag, theme->GetColour(colour), 5.f);
+    gfx::drawTextArgs(vg, tag.x + tag.w / 2.f, tag.y + tag.h / 2.f, FONT, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE,
+        theme->GetColour(ThemeEntryID_BACKGROUND), "%s", text.c_str());
+}
+
 } // namespace
 
 Menu::LazyImage::LazyImage(LazyImage&& rhs) noexcept {
@@ -472,13 +506,18 @@ void Menu::DrawHome(NVGcontext* vg, Theme* theme) {
             const auto image = GetImage(e, true, budget);
 
             gfx::drawImage(vg, x + xoff, y, BANNER_W, BANNER_H, image ? image : App::GetDefaultImage(), 5.f);
+            DrawInstallBadge(vg, theme, Vec4{x + xoff, y, BANNER_W, BANNER_H}, GetCardKey(e.app));
             m_banner_name.Draw(vg, selected, x + xoff, y + BANNER_H + 20.f, w - 30.f - xoff, 18.f, NVG_ALIGN_LEFT, theme->GetColour(text_id), e.app.name.c_str());
             m_banner_publisher.Draw(vg, selected, x + xoff, y + BANNER_H + 55.f, w - 30.f - xoff, 18.f, NVG_ALIGN_LEFT, theme->GetColour(info_id), e.app.publisher.c_str());
             return;
         }
 
         const auto layout = view == ViewType_Detail ? grid::LayoutType_GridDetail : grid::LayoutType_Grid;
-        DrawEntry(vg, theme, layout, v, selected, GetImage(e, false, budget), e.app.name.c_str(), e.app.publisher.c_str(), e.app.version.c_str());
+        const auto image_v = DrawEntry(vg, theme, layout, v, selected, GetImage(e, false, budget), e.app.name.c_str(), e.app.publisher.c_str(), e.app.version.c_str());
+
+        // the detail row's thumbnail is too small for the badge, so that view
+        // carries it in the row's own top-right corner.
+        DrawInstallBadge(vg, theme, view == ViewType_Detail ? v : image_v, GetCardKey(e.app));
     });
 }
 
