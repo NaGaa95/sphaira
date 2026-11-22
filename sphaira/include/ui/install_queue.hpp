@@ -22,6 +22,11 @@ class InstallQueue final {
 public:
     enum class State { Waiting, Running, Done, Failed, Cancelled };
 
+    struct Content {
+        u64 id;
+        s64 version;
+    };
+
     struct Job {
         std::string name{};
         int image{};                   // shown in the progress box, may be 0.
@@ -29,9 +34,8 @@ public:
         State state{State::Waiting};
         Result rc{};
         u64 id{};
-        // the caller's own id for what this job installs, 0 when it has none.
-        // pages use it to show the state of a title they list.
         u64 key{};
+        std::vector<Content> contents{};
     };
 
     static auto Get() -> InstallQueue&;
@@ -39,7 +43,7 @@ public:
     // queues a job, starting it right away when nothing runs. the first job of
     // an idle queue opens its progress box, the rest start where the previous
     // one was left: on screen if it was being watched, in the background if not.
-    void Add(const std::string& name, int image, const ProgressBoxCallback& callback, u64 key = 0);
+    void Add(const std::string& name, int image, const ProgressBoxCallback& callback, u64 key, std::vector<Content> contents);
 
     // called once per frame by the app, after the widgets have updated.
     void Update();
@@ -51,8 +55,8 @@ public:
     // true while an install runs or waits.
     auto IsBusy() const -> bool;
     auto GetPendingCount() const -> size_t;
-    // Waiting or Running for `key`; nothing once it finished. 0 never matches.
-    auto GetPendingState(u64 key) const -> std::optional<State>;
+    // Badges match a page or content ID. A version restricts the match to selected content.
+    auto GetPendingState(u64 id, std::optional<s64> version = {}) const -> std::optional<State>;
     // bumped every time a job finishes, for pages that show what is installed.
     auto GetFinishedCounter() const -> u64 { return m_finished_counter; }
 

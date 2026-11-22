@@ -397,6 +397,7 @@ auto ParseDownload(yyjson_val* item, const std::string& base_url) -> ShopDownloa
     ShopDownload out{};
     out.url = GetString(item, "downloadUrl");
     out.extension = GetString(item, "downloadExtension");
+    out.version = yyjson_get_sint(yyjson_obj_get(item, "appVersion"));
     if (!out.url.empty() && out.url.front() == '/') {
         out.url = base_url + out.url.substr(1);
     }
@@ -733,7 +734,7 @@ auto JsonString(const std::string& str) -> std::string {
 // THUMB, the size a card draws it at.
 constexpr const char* BASE_FIELDS = "appId displayVersion latestOwnedVersion{displayVersion} titledb{name publisher icon(size:THUMB){url local} banner(size:THUMB){url local}}";
 constexpr const char* UPDATE_FIELDS = "appId titleId displayVersion title{name publisher icon(size:THUMB){url local} banner(size:THUMB){url local}}";
-constexpr const char* DLC_FIELDS = "appId titleId displayVersion downloadUrl downloadExtension titledb{name publisher banner(size:THUMB){url local}} title{name icon(size:THUMB){url local}}";
+constexpr const char* DLC_FIELDS = "appId titleId appVersion displayVersion downloadUrl downloadExtension titledb{name publisher banner(size:THUMB){url local}} title{name icon(size:THUMB){url local}}";
 
 // what a page draws beyond its card, at CLIENT for the page and SCREEN for the
 // viewer. `availableVersions` is the catalogue's ascending list, so its last is

@@ -54,6 +54,7 @@ struct ShopImage {
 struct ShopDownload {
     std::string url{};       // absolute, resolved against the shop root.
     std::string extension{}; // nsp, nsz, xci or xcz; empty when the shop didn't say.
+    s64 version{};
 };
 
 // a card lives as long as the page it arrived on, and a page can outlast a
