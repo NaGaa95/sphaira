@@ -5,6 +5,7 @@
 #include "ui/popup_multi_select.hpp"
 #include "ui/progress_box.hpp"
 #include "ui/install_queue.hpp"
+#include "ui/option_box.hpp"
 #include "yati/yati.hpp"
 #include "yati/source/http.hpp"
 
@@ -193,11 +194,6 @@ auto StripGameName(const std::string& name, const std::string& game) -> std::str
         return name;
     }
     return std::string{rest};
-}
-
-// the shop spells an id as 16 hex digits, and yati compares the number.
-auto ParseId(const std::string& id) -> u64 {
-    return std::strtoull(id.c_str(), nullptr, 16);
 }
 
 auto IsSpace(char c) -> bool {
@@ -970,6 +966,9 @@ void TitleMenu::Install() {
         return;
     }
 
+    const auto key = sphaira::ownfoil::ParseId(m_page.id);
+    auto& queue = InstallQueue::Get();
+
     // one file can carry several of the chosen apps, so they are gathered by
     // download: each file is fetched once and installs only what was chosen of it.
     struct Target {
@@ -977,9 +976,12 @@ void TitleMenu::Install() {
         std::vector<u64> ids{};
     };
     std::vector<Target> targets;
+    std::vector<InstallQueue::Content> contents;
+    std::optional<InstallQueue::State> pending;
+    std::string pending_name;
     bool missing{};
 
-    const auto add = [&targets, &missing](const api::ShopDownload& download, u64 id) {
+    const auto add = [&](const api::ShopDownload& download, u64 id, const std::string& name) {
         // the download serves no file name, so without the extension there is
         // no telling which container to read.
         if (download.url.empty() || download.extension.empty()) {
@@ -987,6 +989,15 @@ void TitleMenu::Install() {
             return;
         }
 
+        if (const auto state = queue.GetPendingState(id, download.version)) {
+            if (!pending || (*pending == InstallQueue::State::Waiting && *state == InstallQueue::State::Running)) {
+                pending = state;
+                pending_name = name;
+            }
+            return;
+        }
+
+        contents.push_back({id, download.version});
         auto it = std::find_if(targets.begin(), targets.end(), [&download](const auto& e) {
             return e.download.url == download.url;
         });
@@ -997,34 +1008,43 @@ void TitleMenu::Install() {
     };
 
     if (m_page.dlc) {
-        add(m_page.download, ParseId(m_page.id));
+        add(m_page.download, key, GetName());
     } else {
         if (m_install_version >= 0 && m_install_version < static_cast<s64>(m_title.versions.size())) {
-            const auto game_id = ParseId(m_page.game_id);
+            const auto game_id = sphaira::ownfoil::ParseId(m_page.game_id);
             const auto& chosen = m_title.versions[m_install_version];
 
             // a game the console hasn't got needs its base game under any update.
             const auto& base = m_title.versions.front();
             if (!m_installed.installed && base.version == 0) {
-                add(base.download, game_id);
+                add(base.download, game_id, GetName());
             }
 
             // an update's id is its game's with 0x800 set. the installed version
             // puts nothing new on the console: chosen, it installs the add-ons alone.
             if (chosen.version > 0 && !(m_installed.installed && chosen.version == m_installed.version)) {
-                add(chosen.download, game_id ^ 0x800);
+                add(chosen.download, game_id ^ 0x800, GetName());
             }
         }
 
         for (size_t i = 0; i < m_install_dlc.size() && i < m_title.dlc.size(); i++) {
             if (m_install_dlc[i]) {
-                add(m_title.dlc[i].download, ParseId(m_title.dlc[i].app_id));
+                const auto& dlc = m_title.dlc[i];
+                add(dlc.download, sphaira::ownfoil::ParseId(dlc.app_id), dlc.name);
             }
         }
     }
 
     if (missing) {
         App::Notify(GetName() + ": " + "The shop didn't say how to download this"_i18n);
+        return;
+    }
+
+    if (pending) {
+        const auto message = *pending == InstallQueue::State::Running
+            ? "Already installing."_i18n
+            : "Already waiting to install."_i18n;
+        App::Push<ui::OptionBox>(pending_name + "\n\n" + message, "OK"_i18n);
         return;
     }
 
@@ -1036,7 +1056,7 @@ void TitleMenu::Install() {
     // the page, so nothing here may be captured by it. a running install is
     // either on screen or off the stack, so only the install menu is closed.
     App::PopToMenu();
-    InstallQueue::Get().Add(GetName(), 0, [config = m_config, targets](ProgressBox* pbox) -> Result {
+    queue.Add(GetName(), 0, [config = m_config, targets = std::move(targets)](ProgressBox* pbox) -> Result {
         for (const auto& target : targets) {
             yati::source::Http source{target.download.url, config.user, config.pass, pbox->GetToken()};
 
@@ -1049,7 +1069,7 @@ void TitleMenu::Install() {
         }
 
         R_SUCCEED();
-    });
+    }, key, std::move(contents));
 }
 
 void TitleMenu::ShowAddons(const std::function<void()>& changed) {

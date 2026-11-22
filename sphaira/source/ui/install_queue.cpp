@@ -25,15 +25,17 @@ auto InstallQueue::Get() -> InstallQueue& {
     return queue;
 }
 
-void InstallQueue::Add(const std::string& name, int image, const ProgressBoxCallback& callback) {
+void InstallQueue::Add(const std::string& name, int image, const ProgressBoxCallback& callback, u64 key, std::vector<Content> contents) {
     if (m_shutdown) {
         return;
     }
 
     const auto busy = IsBusy();
-    auto& job = m_jobs.emplace_back(Job{name, image, callback});
-    job.id = m_next_id++;
-    log_write("[QUEUE] added %s (id %zu), busy: %u\n", name.c_str(), job.id, busy);
+    auto& job = m_jobs.emplace_back(Job{
+        .name = name, .image = image, .callback = callback,
+        .id = m_next_id++, .key = key, .contents = std::move(contents),
+    });
+    log_write("[QUEUE] added %s (id %zu, key %016lX), busy: %u\n", name.c_str(), job.id, job.key, busy);
 
     if (busy) {
         App::Notify(i18n::Reorder("Queued ", name) + " (" + std::to_string(GetPendingCount()) + ")");
@@ -198,6 +200,27 @@ auto InstallQueue::GetPendingCount() const -> size_t {
     return std::count_if(m_jobs.begin(), m_jobs.end(), [](const auto& e) {
         return e.state == State::Waiting;
     });
+}
+
+auto InstallQueue::GetPendingState(u64 id, std::optional<s64> version) const -> std::optional<State> {
+    if (!id) {
+        return std::nullopt;
+    }
+
+    const auto it = std::find_if(m_jobs.begin(), m_jobs.end(), [id, version](const auto& job) {
+        if (job.state != State::Waiting && job.state != State::Running) {
+            return false;
+        }
+        return (!version && job.key == id) || std::ranges::any_of(job.contents, [id, version](const auto& content) {
+            return content.id == id && (!version || content.version == *version);
+        });
+    });
+
+    if (it == m_jobs.end()) {
+        return std::nullopt;
+    }
+
+    return it->state;
 }
 
 auto InstallQueue::GetRunning() -> Job* {
