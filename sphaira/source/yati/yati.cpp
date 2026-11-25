@@ -83,33 +83,26 @@ struct TikCollection {
 
 struct Yati;
 
-const u64 INFLATE_BUFFER_MAX = 1024*1024*4;
-
 struct ThreadBuffer {
-    ThreadBuffer() {
-        buf.reserve(INFLATE_BUFFER_MAX);
-    }
-
-    std::vector<u8> buf;
-    s64 off;
+    std::vector<u8> buf{};
+    s64 off{};
 };
 
-template<std::size_t Size>
 struct RingBuf {
 private:
-    ThreadBuffer buf[Size]{};
+    std::vector<ThreadBuffer> buf{};
     unsigned r_index{};
     unsigned w_index{};
 
-    static_assert((sizeof(RingBuf::buf) & (sizeof(RingBuf::buf) - 1)) == 0, "Must be power of 2!");
-
 public:
+    explicit RingBuf(unsigned capacity) : buf{capacity} {}
+
     void ringbuf_reset() {
         this->r_index = this->w_index;
     }
 
     unsigned ringbuf_capacity() const {
-        return sizeof(this->buf) / sizeof(this->buf[0]);
+        return static_cast<unsigned>(this->buf.size());
     }
 
     unsigned ringbuf_size() const {
@@ -138,32 +131,7 @@ public:
 };
 
 struct ThreadData {
-    ThreadData(Yati* _yati, std::span<TikCollection> _tik, NcaCollection* _nca)
-    : yati{_yati}, tik{_tik}, nca{_nca} {
-        mutexInit(std::addressof(read_mutex));
-        mutexInit(std::addressof(write_mutex));
-
-        condvarInit(std::addressof(can_read));
-        condvarInit(std::addressof(can_decompress));
-        condvarInit(std::addressof(can_decompress_write));
-        condvarInit(std::addressof(can_write));
-
-        ueventCreate(&m_uevent_done, false);
-        ueventCreate(&m_uevent_progres, true);
-
-        sha256ContextCreate(&sha256);
-        // this will be updated with the actual size from nca header.
-        write_size = nca->size;
-
-        // reduce buffer size to preve
-        if (App::IsFileBaseEmummc()) {
-            read_buffer_size = 1024 * 512;
-        } else {
-            read_buffer_size = 1024*1024*4;
-        }
-
-        max_buffer_size = std::max(read_buffer_size, INFLATE_BUFFER_MAX);
-    }
+    ThreadData(Yati* _yati, std::span<TikCollection> _tik, NcaCollection* _nca);
 
     auto GetResults() volatile -> Result;
     void WakeAllThreads();
@@ -192,7 +160,7 @@ struct ThreadData {
         read_result = result;
 
         // wake up decompress thread as it may be waiting on data that never comes.
-        condvarWakeOne(std::addressof(can_decompress));
+        condvarWakeAll(std::addressof(can_decompress));
 
         if (R_FAILED(result)) {
             ueventSignal(GetDoneEvent());
@@ -202,8 +170,9 @@ struct ThreadData {
     void SetDecompressResult(Result result) {
         decompress_result = result;
 
-        // wake up write thread as it may be waiting on data that never comes.
-        condvarWakeOne(std::addressof(can_write));
+        // wake up both reader and writer threads so neither deadlocks on error.
+        condvarWakeAll(std::addressof(can_read));
+        condvarWakeAll(std::addressof(can_write));
 
         if (R_FAILED(result)) {
             ueventSignal(GetDoneEvent());
@@ -213,8 +182,9 @@ struct ThreadData {
     void SetWriteResult(Result result) {
         write_result = result;
 
-        // wake up decompress thread as it may be waiting on data that never comes.
-        condvarWakeOne(std::addressof(can_decompress_write));
+        // wake up decompress and reader threads on error or completion.
+        condvarWakeAll(std::addressof(can_decompress_write));
+        condvarWakeAll(std::addressof(can_read));
 
         ueventSignal(GetDoneEvent());
     }
@@ -224,31 +194,31 @@ struct ThreadData {
     Result SetDecompressBuf(std::vector<u8>& buf, s64 off, s64 size) {
         buf.resize(size);
 
-        mutexLock(std::addressof(read_mutex));
-        if (!read_buffers.ringbuf_free()) {
-            if (!write_running) {
+        SCOPED_MUTEX(std::addressof(read_mutex));
+        while (!read_buffers.ringbuf_free()) {
+            R_TRY(GetResults());
+            if (!decompress_running || !write_running) {
                 R_SUCCEED();
             }
-            R_TRY(condvarWait(std::addressof(can_read), std::addressof(read_mutex)));
+            condvarWaitTimeout(std::addressof(can_read), std::addressof(read_mutex), 1e+8);
         }
 
-        ON_SCOPE_EXIT(mutexUnlock(std::addressof(read_mutex)));
         R_TRY(GetResults());
         read_buffers.ringbuf_push(buf, off);
         return condvarWakeOne(std::addressof(can_decompress));
     }
 
     Result GetDecompressBuf(std::vector<u8>& buf_out, s64& off_out) {
-        mutexLock(std::addressof(read_mutex));
-        if (!read_buffers.ringbuf_size()) {
+        SCOPED_MUTEX(std::addressof(read_mutex));
+        while (!read_buffers.ringbuf_size()) {
+            R_TRY(GetResults());
             if (!read_running) {
                 buf_out.resize(0);
                 R_SUCCEED();
             }
-            R_TRY(condvarWait(std::addressof(can_decompress), std::addressof(read_mutex)));
+            condvarWaitTimeout(std::addressof(can_decompress), std::addressof(read_mutex), 1e+8);
         }
 
-        ON_SCOPE_EXIT(mutexUnlock(std::addressof(read_mutex)));
         R_TRY(GetResults());
         read_buffers.ringbuf_pop(buf_out, off_out);
         return condvarWakeOne(std::addressof(can_read));
@@ -260,31 +230,31 @@ struct ThreadData {
             sha256ContextUpdate(std::addressof(sha256), buf.data(), buf.size());
         }
 
-        mutexLock(std::addressof(write_mutex));
-        if (!write_buffers.ringbuf_free()) {
-            if (!decompress_running) {
+        SCOPED_MUTEX(std::addressof(write_mutex));
+        while (!write_buffers.ringbuf_free()) {
+            R_TRY(GetResults());
+            if (!write_running) {
                 R_SUCCEED();
             }
-            R_TRY(condvarWait(std::addressof(can_decompress_write), std::addressof(write_mutex)));
+            condvarWaitTimeout(std::addressof(can_decompress_write), std::addressof(write_mutex), 1e+8);
         }
 
-        ON_SCOPE_EXIT(mutexUnlock(std::addressof(write_mutex)));
         R_TRY(GetResults());
         write_buffers.ringbuf_push(buf, 0);
         return condvarWakeOne(std::addressof(can_write));
     }
 
     Result GetWriteBuf(std::vector<u8>& buf_out, s64& off_out) {
-        mutexLock(std::addressof(write_mutex));
-        if (!write_buffers.ringbuf_size()) {
+        SCOPED_MUTEX(std::addressof(write_mutex));
+        while (!write_buffers.ringbuf_size()) {
+            R_TRY(GetResults());
             if (!decompress_running) {
                 buf_out.resize(0);
                 R_SUCCEED();
             }
-            R_TRY(condvarWait(std::addressof(can_write), std::addressof(write_mutex)));
+            condvarWaitTimeout(std::addressof(can_write), std::addressof(write_mutex), 1e+8);
         }
 
-        ON_SCOPE_EXIT(mutexUnlock(std::addressof(write_mutex)));
         R_TRY(GetResults());
         write_buffers.ringbuf_pop(buf_out, off_out);
         return condvarWakeOne(std::addressof(can_decompress_write));
@@ -307,8 +277,8 @@ struct ThreadData {
     UEvent m_uevent_done{};
     UEvent m_uevent_progres{};
 
-    RingBuf<4> read_buffers{};
-    RingBuf<4> write_buffers{};
+    RingBuf read_buffers;
+    RingBuf write_buffers;
 
     ncz::BlockHeader ncz_block_header{};
     std::vector<ncz::Section> ncz_sections{};
@@ -316,6 +286,7 @@ struct ThreadData {
 
     Sha256Context sha256{};
 
+    u64 inflate_buffer_size{};
     u64 read_buffer_size{};
     u64 max_buffer_size{};
 
@@ -380,6 +351,34 @@ struct Yati {
     bool es_init{};
 };
 
+ThreadData::ThreadData(Yati* _yati, std::span<TikCollection> _tik, NcaCollection* _nca)
+: yati{_yati}
+, tik{_tik}
+, nca{_nca}
+, read_buffers{(App::IsApplication() && !_yati->source->IsStream()) ? 4U : 2U}
+, write_buffers{App::IsApplication() ? 4U : 2U} {
+    mutexInit(std::addressof(read_mutex));
+    mutexInit(std::addressof(write_mutex));
+
+    condvarInit(std::addressof(can_read));
+    condvarInit(std::addressof(can_decompress));
+    condvarInit(std::addressof(can_decompress_write));
+    condvarInit(std::addressof(can_write));
+
+    ueventCreate(&m_uevent_done, false);
+    ueventCreate(&m_uevent_progres, true);
+
+    sha256ContextCreate(&sha256);
+    // this will be updated with the actual size from nca header.
+    write_size = nca->size;
+
+    const bool is_app = App::IsApplication();
+    const bool is_file_emummc = App::IsFileBaseEmummc();
+    inflate_buffer_size = is_app ? (1024ULL * 1024ULL * 4ULL) : (1024ULL * 1024ULL * 1ULL);
+    read_buffer_size = is_file_emummc ? (1024ULL * 512ULL) : (is_app ? (1024ULL * 1024ULL * 4ULL) : (1024ULL * 1024ULL * 1ULL));
+    max_buffer_size = std::max(read_buffer_size, inflate_buffer_size);
+}
+
 auto ThreadData::GetResults() volatile -> Result {
     R_TRY(yati->pbox->ShouldExitResult());
     R_TRY(read_result.load());
@@ -393,9 +392,6 @@ void ThreadData::WakeAllThreads() {
     condvarWakeAll(std::addressof(can_decompress));
     condvarWakeAll(std::addressof(can_decompress_write));
     condvarWakeAll(std::addressof(can_write));
-
-    mutexUnlock(std::addressof(read_mutex));
-    mutexUnlock(std::addressof(write_mutex));
 }
 
 Result ThreadData::Read(void* buf, s64 size, u64* bytes_read) {
@@ -443,7 +439,10 @@ Result HasRequiredTicket(const nca::Header& header, std::span<TikCollection> tik
 // read thread reads all data from the source, it also handles
 // parsing ncz headers, sections and reading ncz blocks
 Result Yati::readFuncInternal(ThreadData* t) {
-    ON_SCOPE_EXIT( t->read_running = false; );
+    ON_SCOPE_EXIT(
+        t->read_running = false;
+        condvarWakeAll(std::addressof(t->can_decompress));
+    );
 
     // the main buffer which data is read into.
     std::vector<u8> buf;
@@ -451,36 +450,38 @@ Result Yati::readFuncInternal(ThreadData* t) {
     // would seek back to the offset, however this is not possible in stream
     // mode, so we instead store the data to the temp buffer and pre-pend it.
     std::vector<u8> temp_buf;
-    buf.reserve(t->max_buffer_size);
-    temp_buf.reserve(t->max_buffer_size);
+    buf.reserve(t->read_buffer_size);
 
-    while (t->read_offset < t->nca->size && R_SUCCEEDED(t->GetResults())) {
-        const auto buffer_offset = t->read_offset.load();
+    while ((t->read_offset < t->nca->size || !temp_buf.empty()) && R_SUCCEEDED(t->GetResults())) {
+        const auto buffer_offset = t->read_offset.load() - static_cast<s64>(temp_buf.size());
 
         // read more data
         s64 read_size = t->read_buffer_size;
-        if (!t->read_offset) {
+        if (!t->read_offset && temp_buf.empty()) {
             read_size = NCZ_SECTION_OFFSET;
         }
 
         s64 buf_offset = 0;
         if (!temp_buf.empty()) {
-            buf = temp_buf;
-            read_size -= temp_buf.size();
-            buf_offset = temp_buf.size();
+            buf = std::move(temp_buf);
+            read_size -= static_cast<s64>(buf.size());
+            buf_offset = static_cast<s64>(buf.size());
             temp_buf.clear();
         }
 
         u64 bytes_read{};
-        buf.resize(buf_offset + read_size);
-        R_TRY(t->Read(buf.data() + buf_offset, read_size, std::addressof(bytes_read)));
-        auto buf_size = buf_offset + bytes_read;
-        if (!bytes_read) {
+        if (t->read_offset < t->nca->size && read_size > 0) {
+            buf.resize(buf_offset + read_size);
+            R_TRY(t->Read(buf.data() + buf_offset, read_size, std::addressof(bytes_read)));
+        }
+
+        auto buf_size = buf_offset + static_cast<s64>(bytes_read);
+        if (!buf_size) {
             break;
         }
 
         // read enough bytes for ncz, check magic
-        if (t->read_offset == NCZ_SECTION_OFFSET) {
+        if (buffer_offset == 0 && t->read_offset == NCZ_SECTION_OFFSET) {
             // check for ncz section header.
             ncz::Header header{};
             std::memcpy(std::addressof(header), buf.data() + 0x4000, sizeof(header));
@@ -494,11 +495,12 @@ Result Yati::readFuncInternal(ThreadData* t) {
                 R_TRY(t->Read(t->ncz_sections.data(), t->ncz_sections.size() * sizeof(ncz::Section), std::addressof(bytes_read)));
 
                 // check for ncz block header.
+                t->ncz_block_header = {};
                 R_TRY(t->Read(std::addressof(t->ncz_block_header), sizeof(t->ncz_block_header), std::addressof(bytes_read)));
-                if (t->ncz_block_header.magic != NCZ_BLOCK_MAGIC) {
-                    // didn't find block, keep the data we just read in the temp buffer.
-                    temp_buf.resize(sizeof(t->ncz_block_header));
-                    std::memcpy(temp_buf.data(), std::addressof(t->ncz_block_header), temp_buf.size());
+                if (bytes_read != sizeof(t->ncz_block_header) || t->ncz_block_header.magic != NCZ_BLOCK_MAGIC) {
+                    // didn't find block, keep the exact data we just read in the temp buffer.
+                    temp_buf.resize(bytes_read);
+                    std::memcpy(temp_buf.data(), std::addressof(t->ncz_block_header), bytes_read);
                     log_write("storing temp data of size: %zu\n", temp_buf.size());
                 } else {
                     // validate block header.
@@ -528,11 +530,19 @@ Result Yati::readFuncInternal(ThreadData* t) {
 // decompress thread handles decrypting / modifying the nca header, decompressing ncz
 // and calculating the running sha256.
 Result Yati::decompressFuncInternal(ThreadData* t) {
-    ON_SCOPE_EXIT( t->decompress_running = false; );
+    ON_SCOPE_EXIT(
+        t->decompress_running = false;
+        condvarWakeAll(std::addressof(t->can_read));
+        condvarWakeAll(std::addressof(t->can_write));
+    );
 
-    // only used for ncz files.
-    auto dctx = ZSTD_createDCtx();
-    ON_SCOPE_EXIT(ZSTD_freeDCtx(dctx));
+    // only created on demand for ncz files.
+    ZSTD_DCtx* dctx{};
+    ON_SCOPE_EXIT(
+        if (dctx) {
+            ZSTD_freeDCtx(dctx);
+        }
+    );
     const auto chunk_size = ZSTD_DStreamOutSize();
     const ncz::Section* ncz_section{};
     const ncz::BlockInfo* ncz_block{};
@@ -541,12 +551,10 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
     s64 inflate_offset{};
     Aes128CtrContext ctx{};
     std::vector<u8> inflate_buf{};
-    inflate_buf.reserve(t->max_buffer_size);
 
     s64 written{};
     s64 block_offset{};
     std::vector<u8> buf{};
-    buf.reserve(t->max_buffer_size);
 
     // encrypts the nca and passes the buffer to the write thread.
     const auto ncz_flush = [&](s64 size) -> Result {
@@ -578,7 +586,7 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
 
                 if (ncz_section->crypto_type >= nca::EncryptionType_AesCtr) {
                     const auto swp = std::byteswap(u64(written) >> 4);
-                    u8 counter[0x16];
+                    u8 counter[0x10];
                     std::memcpy(counter + 0x0, ncz_section->counter, 0x8);
                     std::memcpy(counter + 0x8, &swp, 0x8);
                     aes128CtrContextCreate(&ctx, ncz_section->key, counter);
@@ -586,14 +594,14 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
             }
 
             const auto total_size = ncz_section->offset + ncz_section->size;
-            const auto chunk_size = std::min<u64>(total_size - written, size - off);
+            const auto sec_chunk_size = std::min<u64>(total_size - written, size - off);
 
             if (ncz_section->crypto_type >= nca::EncryptionType_AesCtr) {
-                aes128CtrCrypt(&ctx, inflate_buf.data() + off, inflate_buf.data() + off, chunk_size);
+                aes128CtrCrypt(&ctx, inflate_buf.data() + off, inflate_buf.data() + off, sec_chunk_size);
             }
 
-            written += chunk_size;
-            off += chunk_size;
+            written += sec_chunk_size;
+            off += sec_chunk_size;
         }
 
         R_TRY(t->SetWriteBuf(inflate_buf, size, config.skip_nca_hash_verify));
@@ -602,7 +610,7 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
         // restore remaining data to the swapped buffer.
         if (!temp_vector.empty()) {
             log_write("[NCZ] storing data size: %zu\n", temp_vector.size());
-            inflate_buf = temp_vector;
+            inflate_buf = std::move(temp_vector);
         }
 
         R_SUCCEED();
@@ -619,6 +627,12 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
         if (!is_ncz && !t->ncz_sections.empty()) {
             log_write("YES IT FOUND NCZ\n");
             is_ncz = true;
+            dctx = ZSTD_createDCtx();
+            R_UNLESS(dctx != nullptr, Result_YatiInvalidNczZstdError);
+            if (App::IsApplication()) {
+                ZSTD_DCtx_setParameter(dctx, ZSTD_d_windowLogMax, 30);
+            }
+            inflate_buf.reserve(t->inflate_buffer_size + chunk_size);
         }
 
         // if we don't have a ncz or it's before the ncz header, pass buffer directly to write
@@ -709,9 +723,9 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                     }
 
                     // https://github.com/nicoboss/nsz/issues/79
-                    auto decompressedBlockSize = 1UL << t->ncz_block_header.block_size_exponent;
+                    auto decompressedBlockSize = 1ULL << t->ncz_block_header.block_size_exponent;
                     // special handling for the last block to check it's actually compressed
-                    if (ncz_block->offset == t->ncz_blocks.back().offset) {
+                    if (ncz_block == std::addressof(t->ncz_blocks.back())) {
                         log_write("[NCZ] last block special handling\n");
                         // https://github.com/nicoboss/nsz/issues/210
                         const auto remainder = t->ncz_block_header.decompressed_size % decompressedBlockSize;
@@ -729,35 +743,75 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                 }
 
                 if (compressed) {
-                    log_write("[NCZ] COMPRESSED block\n");
+                    const bool block_finished = !t->ncz_blocks.empty() &&
+                        (static_cast<u64>(block_offset) + buffer.size() == ncz_block->size);
                     ZSTD_inBuffer input = { buffer.data(), buffer.size(), 0 };
-                    while (input.pos < input.size) {
+
+                    while (true) {
                         R_TRY(t->GetResults());
 
-                        inflate_buf.resize(inflate_offset + chunk_size);
+                        const s64 needed = inflate_offset + static_cast<s64>(chunk_size);
+                        if (inflate_buf.capacity() < static_cast<size_t>(needed)) {
+                            inflate_buf.reserve(std::max<size_t>(needed, t->inflate_buffer_size + chunk_size));
+                        }
+                        inflate_buf.resize(needed);
+
                         ZSTD_outBuffer output = { inflate_buf.data() + inflate_offset, chunk_size, 0 };
+                        const size_t prev_in_pos = input.pos;
                         const auto res = ZSTD_decompressStream(dctx, std::addressof(output), std::addressof(input));
                         if (ZSTD_isError(res)) {
-                            log_write("[NCZ] ZSTD_decompressStream() pos: %zu size: %zu res: %zd msg: %s\n", input.pos, input.size, res, ZSTD_getErrorName(res));
+                            log_write("[NCZ] ZSTD_decompressStream() pos: %zu size: %zu res: %zd msg: %s (applet: %d)\n",
+                                input.pos, input.size, res, ZSTD_getErrorName(res), App::IsApplet());
+                            R_THROW(Result_YatiInvalidNczZstdError);
                         }
-                        R_UNLESS(!ZSTD_isError(res), Result_YatiInvalidNczZstdError);
 
                         t->decompress_offset += output.pos;
                         inflate_offset += output.pos;
-                        if (inflate_offset >= INFLATE_BUFFER_MAX) {
-                            log_write("[NCZ] flushing compressed data: %zd vs %zd diff: %zd\n", inflate_offset, INFLATE_BUFFER_MAX, inflate_offset - INFLATE_BUFFER_MAX);
-                            R_TRY(ncz_flush(INFLATE_BUFFER_MAX));
+                        while (inflate_offset >= static_cast<s64>(t->inflate_buffer_size)) {
+                            log_write("[NCZ] flushing compressed data: %zd vs %zu diff: %zd\n", inflate_offset, t->inflate_buffer_size, inflate_offset - static_cast<s64>(t->inflate_buffer_size));
+                            R_TRY(ncz_flush(t->inflate_buffer_size));
                         }
+
+                        if (input.pos < input.size) {
+                            if (input.pos == prev_in_pos && output.pos == 0) {
+                                log_write("[NCZ] ZSTD_decompressStream() stalled at pos: %zu / %zu res: %zu\n", input.pos, input.size, res);
+                                R_THROW(Result_YatiInvalidNczZstdError);
+                            }
+                            continue;
+                        }
+
+                        // Drain remaining output buffered inside dctx (ZSTD may consume all input while filling output).
+                        if (output.pos == output.size && res > 0) {
+                            continue;
+                        }
+
+                        if (block_finished && res > 0) {
+                            if (output.pos > 0) {
+                                continue;
+                            }
+                            log_write("[NCZ] NCZ block ended with incomplete ZSTD frame (res: %zu)\n", res);
+                            R_THROW(Result_YatiInvalidNczZstdError);
+                        }
+
+                        break;
+                    }
+
+                    if (block_finished) {
+                        ZSTD_DCtx_reset(dctx, ZSTD_reset_session_only);
                     }
                 } else {
-                    inflate_buf.resize(inflate_offset + buffer.size());
+                    const s64 needed = inflate_offset + static_cast<s64>(buffer.size());
+                    if (inflate_buf.capacity() < static_cast<size_t>(needed)) {
+                        inflate_buf.reserve(std::max<size_t>(needed, t->inflate_buffer_size + buffer.size()));
+                    }
+                    inflate_buf.resize(needed);
                     std::memcpy(inflate_buf.data() + inflate_offset, buffer.data(), buffer.size());
 
                     t->decompress_offset += buffer.size();
                     inflate_offset += buffer.size();
-                    if (inflate_offset >= INFLATE_BUFFER_MAX) {
+                    while (inflate_offset >= static_cast<s64>(t->inflate_buffer_size)) {
                         log_write("[NCZ] flushing copy data\n");
-                        R_TRY(ncz_flush(INFLATE_BUFFER_MAX));
+                        R_TRY(ncz_flush(t->inflate_buffer_size));
                     }
                 }
 
@@ -784,10 +838,13 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
 
 // write thread writes data to the nca placeholder.
 Result Yati::writeFuncInternal(ThreadData* t) {
-    ON_SCOPE_EXIT( t->write_running = false; );
+    ON_SCOPE_EXIT(
+        t->write_running = false;
+        condvarWakeAll(std::addressof(t->can_decompress_write));
+        condvarWakeAll(std::addressof(t->can_read));
+    );
 
     std::vector<u8> buf;
-    buf.reserve(t->max_buffer_size);
     const auto is_file_based_emummc = App::IsFileBaseEmummc();
 
     while (t->write_offset < t->write_size && R_SUCCEEDED(t->GetResults())) {

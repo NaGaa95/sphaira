@@ -76,7 +76,7 @@ Result NczBlockReader::Read(void *_buf, s64 off, s64 size, u64* bytes_read_out) 
 
             // new block.
             lru_data = m_lru.GetNextFree();
-            lru_data->offset = block.offset;
+            lru_data->offset = static_cast<s64>(block_id) * m_block_size;
 
             // check if this block is compressed.
             const auto compressed = block.size < decompressedBlockSize;
