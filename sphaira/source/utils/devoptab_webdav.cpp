@@ -10,7 +10,8 @@
 #include <vector>
 #include <memory>
 #include <cstring>
-#include <optional>
+#include <cctype>
+#include <charconv>
 #include <sys/stat.h>
 
 // todo: try to reduce binary size by using a smaller xml parser.
@@ -21,14 +22,30 @@ namespace {
 
 constexpr const char* XPATH_RESPONSE      = "//*[local-name()='response']";
 constexpr const char* XPATH_HREF          = ".//*[local-name()='href']";
-constexpr const char* XPATH_PROPSTAT_PROP = ".//*[local-name()='propstat']/*[local-name()='prop']";
-constexpr const char* XPATH_PROP          = ".//*[local-name()='prop']";
-constexpr const char* XPATH_RESOURCETYPE  = ".//*[local-name()='resourcetype']";
+constexpr const char* XPATH_PROPSTAT      = ".//*[local-name()='propstat']";
+constexpr const char* XPATH_PROP          = "./*[local-name()='prop']";
+constexpr const char* XPATH_STATUS        = "./*[local-name()='status']";
 constexpr const char* XPATH_COLLECTION    = ".//*[local-name()='collection']";
+constexpr const char* XPATH_GETCONTENTLENGTH  = "./*[local-name()='getcontentlength']";
+constexpr const char* XPATH_GETLASTMODIFIED   = "./*[local-name()='getlastmodified']";
+
+// listing a folder also returns the size of each entry, avoiding a stat request
+// per entry.
+constexpr const char* PROPFIND_BODY =
+    "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+    "<d:propfind xmlns:d=\"DAV:\">"
+        "<d:prop>"
+            "<d:resourcetype/>"
+            "<d:getcontentlength/>"
+            "<d:getlastmodified/>"
+        "</d:prop>"
+    "</d:propfind>";
 
 struct DirEntry {
     std::string name{};
     bool is_dir{};
+    u64 size{};
+    time_t mtime{};
 };
 using DirEntries = std::vector<DirEntry>;
 
@@ -73,8 +90,9 @@ private:
     int devoptab_fsync(void *fd) override;
 
     std::pair<bool, long> webdav_custom_command(const std::string& path, const std::string& cmd, std::string_view postfields, std::span<const std::string> headers, bool is_dir, std::vector<char>* response_data = nullptr);
+    std::string webdav_url(const std::string& path, bool is_dir);
     int webdav_dirlist(const std::string& path, DirEntries& out);
-    int webdav_stat(const std::string& path, struct stat* st, bool is_dir);
+    int webdav_stat(const std::string& path, struct stat* st);
     int webdav_remove_file_folder(const std::string& path, bool is_dir);
     int webdav_unlink(const std::string& path);
     int webdav_rename(const std::string& old_path, const std::string& new_path, bool is_dir);
@@ -84,6 +102,69 @@ private:
 
 size_t dummy_data_callback(char *ptr, size_t size, size_t nmemb, void *userdata) {
     return size * nmemb;
+}
+
+// strips leading and trailing whitespace, as some servers pad the xml values.
+std::string_view trim(std::string_view str) {
+    while (!str.empty() && std::isspace((unsigned char)str.front())) {
+        str.remove_prefix(1);
+    }
+    while (!str.empty() && std::isspace((unsigned char)str.back())) {
+        str.remove_suffix(1);
+    }
+    return str;
+}
+
+// servers may split the properties across propstat entries with different
+// statuses, only the one that reports 200 is valid.
+pugi::xml_node find_prop(const pugi::xml_node& response) {
+    for (const auto propstat : response.select_nodes(XPATH_PROPSTAT)) {
+        const std::string_view value = propstat.node().select_node(XPATH_STATUS).node().child_value();
+        const auto status = trim(value);
+        if (status.find(" 200 ") != std::string_view::npos) {
+            return propstat.node().select_node(XPATH_PROP).node();
+        }
+    }
+
+    // fallback for servers that omit the status entirely.
+    for (const auto propstat : response.select_nodes(XPATH_PROPSTAT)) {
+        if (!propstat.node().select_node(XPATH_STATUS)) {
+            return propstat.node().select_node(XPATH_PROP).node();
+        }
+    }
+
+    return {};
+}
+
+// a missing or malformed value is treated as zero, as some servers omit
+// getcontentlength and a missing size is not an error for the devoptab layer.
+u64 parse_size(std::string_view str) {
+    str = trim(str);
+    u64 out{};
+    const auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), out);
+    if (ec != std::errc{} || ptr != str.data() + str.size()) {
+        if (!str.empty()) {
+            log_write("[WEBDAV] failed to parse size: %.*s\n", (int)str.size(), str.data());
+        }
+        return 0;
+    }
+
+    return out;
+}
+
+time_t parse_mtime(const pugi::xml_node& prop) {
+    const std::string date{trim(prop.select_node(XPATH_GETLASTMODIFIED).node().child_value())};
+    if (date.empty()) {
+        return 0;
+    }
+
+    const auto time = curl_getdate(date.c_str(), nullptr);
+    if (time < 0) {
+        log_write("[WEBDAV] failed to parse getlastmodified: %s\n", date.c_str());
+        return 0;
+    }
+
+    return time;
 }
 
 // normalises a path returned by the server so that it can be compared against
@@ -123,8 +204,19 @@ std::string normalize_url_path(std::string_view str) {
     return out;
 }
 
+std::string Device::webdav_url(const std::string& _path, bool is_dir) {
+    const auto path = _path.starts_with('/') ? _path.substr(1) : _path;
+
+    if (path.empty()) {
+        auto url = build_url(path, false);
+        return (url.empty() || url.ends_with('/')) ? url : url + '/';
+    }
+
+    return build_url(path, is_dir);
+}
+
 std::pair<bool, long> Device::webdav_custom_command(const std::string& path, const std::string& cmd, std::string_view postfields, std::span<const std::string> headers, bool is_dir, std::vector<char>* response_data) {
-    const auto url = build_url(path, is_dir);
+    const auto url = webdav_url(path, is_dir);
 
     curl_slist* header_list{};
     ON_SCOPE_EXIT(curl_slist_free_all(header_list));
@@ -164,22 +256,13 @@ std::pair<bool, long> Device::webdav_custom_command(const std::string& path, con
 }
 
 int Device::webdav_dirlist(const std::string& path, DirEntries& out) {
-    const std::string_view post_fields =
-        "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
-        "<d:propfind xmlns:d=\"DAV:\">"
-            "<d:prop>"
-            // "<d:getcontentlength/>"
-            "<d:resourcetype/>"
-        "</d:prop>"
-        "</d:propfind>";
-
     const std::string custom_headers[] = {
         "Content-Type: application/xml; charset=utf-8",
         "Depth: 1"
     };
 
     std::vector<char> chunk;
-    const auto [success, response_code] = webdav_custom_command(path, "PROPFIND", post_fields, custom_headers, true, &chunk);
+    const auto [success, response_code] = webdav_custom_command(path, "PROPFIND", PROPFIND_BODY, custom_headers, true, &chunk);
     if (!success) {
         return -EIO;
     }
@@ -187,10 +270,11 @@ int Device::webdav_dirlist(const std::string& path, DirEntries& out) {
     switch (response_code) {
         case 207: // Multi-Status
             break;
+        case 403: // Forbidden
+        case 401: // Unauthorized
+            return -EACCES;
         case 404: // Not Found
             return -ENOENT;
-        case 403: // Forbidden
-            return -EACCES;
         default:
             log_write("[WEBDAV] Unexpected HTTP response code: %ld\n", response_code);
             return -EIO;
@@ -232,22 +316,15 @@ int Device::webdav_dirlist(const std::string& path, DirEntries& out) {
             continue;
         }
 
-        // propstat/prop/resourcetype
-        auto prop_x = response.select_node(XPATH_PROPSTAT_PROP);
-        if (!prop_x) {
-            // try direct prop if structure differs
-            prop_x = response.select_node(XPATH_PROP);
-            if (!prop_x) {
-                continue;
-            }
+        const auto prop = find_prop(response);
+        if (!prop) {
+            continue;
         }
 
-        const auto prop = prop_x.node();
-        const auto rtype_x = prop.select_node(XPATH_RESOURCETYPE);
-        bool is_dir = false;
-        if (rtype_x && rtype_x.node().select_node(XPATH_COLLECTION)) {
-            is_dir = true;
-        }
+        const auto is_dir = (bool)prop.select_node(XPATH_COLLECTION);
+
+        const auto size = parse_size(prop.select_node(XPATH_GETCONTENTLENGTH).node().child_value());
+        const auto mtime = parse_mtime(prop);
 
         auto name = href;
         if (!name.empty() && name.back() == '/') {
@@ -264,7 +341,7 @@ int Device::webdav_dirlist(const std::string& path, DirEntries& out) {
             continue;
         }
 
-        out.emplace_back(name, is_dir);
+        out.emplace_back(name, is_dir, size, mtime);
     }
 
     log_write("[WEBDAV] Parsed %zu entries from directory listing\n", out.size());
@@ -272,67 +349,63 @@ int Device::webdav_dirlist(const std::string& path, DirEntries& out) {
     return 0;
 }
 
-// todo: use PROPFIND to get file size and time, although it is slower...
-int Device::webdav_stat(const std::string& path, struct stat* st, bool is_dir) {
+// HEAD is not used as some servers omit the content-length, and some even
+// return 200 OK for paths that do not exist.
+int Device::webdav_stat(const std::string& path, struct stat* st) {
     std::memset(st, 0, sizeof(*st));
-    const auto url = build_url(path, is_dir);
 
-    curl_set_common_options(this->curl, url);
-    curl_easy_setopt(this->curl, CURLOPT_NOBODY, 1L);
-    curl_easy_setopt(this->curl, CURLOPT_FILETIME, 1L);
+    const std::string custom_headers[] = {
+        "Content-Type: application/xml; charset=utf-8",
+        "Depth: 0"
+    };
 
-    const auto res = curl_easy_perform(this->curl);
-    if (res != CURLE_OK) {
-        log_write("[WEBDAV] curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    std::vector<char> chunk;
+    const auto [success, response_code] = webdav_custom_command(path, "PROPFIND", PROPFIND_BODY, custom_headers, false, &chunk);
+    if (!success) {
         return -EIO;
     }
 
-    long response_code = 0;
-    curl_easy_getinfo(this->curl, CURLINFO_RESPONSE_CODE, &response_code);
-
-    curl_off_t file_size = 0;
-    curl_easy_getinfo(this->curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &file_size);
-
-    curl_off_t file_time = 0;
-    curl_easy_getinfo(this->curl, CURLINFO_FILETIME_T, &file_time);
-
-    const char* content_type{};
-    curl_easy_getinfo(this->curl, CURLINFO_CONTENT_TYPE, &content_type);
-
-    const char* effective_url{};
-    curl_easy_getinfo(this->curl, CURLINFO_EFFECTIVE_URL, &effective_url);
-
     switch (response_code) {
-        case 200: // OK
-        case 206: // Partial Content
+        case 207: // Multi-Status
             break;
+        case 403: // Forbidden
+        case 401: // Unauthorized
+            return -EACCES;
         case 404: // Not Found
             return -ENOENT;
-        case 403: // Forbidden
-            return -EACCES;
         default:
             log_write("[WEBDAV] Unexpected HTTP response code: %ld\n", response_code);
             return -EIO;
     }
 
-    if (effective_url) {
-        if (std::string_view{effective_url}.ends_with('/')) {
-            is_dir = true;
-        }
+    pugi::xml_document doc;
+    if (!doc.load_buffer_inplace(chunk.data(), chunk.size())) {
+        log_write("[WEBDAV] stat failed to parse XML: %s\n", path.c_str());
+        return -EIO;
     }
 
-    if (content_type && !std::strcmp(content_type, "text/html")) {
-        is_dir = true;
+    // depth 0 returns a single response entry for the requested path.
+    const auto response = doc.select_node(XPATH_RESPONSE).node();
+    if (!response.select_node(XPATH_HREF)) {
+        log_write("[WEBDAV] stat returned no response: %s\n", path.c_str());
+        return -ENOENT;
     }
 
-    if (is_dir) {
+    const auto prop = find_prop(response);
+    if (!prop) {
+        log_write("[WEBDAV] stat response has no prop: %s\n", path.c_str());
+        return -EIO;
+    }
+
+    // resourcetype is the source of truth for the entry type.
+    if (prop.select_node(XPATH_COLLECTION)) {
         st->st_mode = S_IFDIR | S_IRUSR | S_IRGRP | S_IROTH;
     } else {
         st->st_mode = S_IFREG | S_IRUSR | S_IRGRP | S_IROTH;
-        st->st_size = file_size > 0 ? file_size : 0;
+        st->st_size = (off_t)parse_size(prop.select_node(XPATH_GETCONTENTLENGTH).node().child_value());
     }
 
-    st->st_mtime = file_time > 0 ? file_time : 0;
+    st->st_mtime = parse_mtime(prop);
     st->st_atime = st->st_mtime;
     st->st_ctime = st->st_mtime;
     st->st_nlink = 1;
@@ -369,7 +442,7 @@ int Device::webdav_rename(const std::string& old_path, const std::string& new_pa
     log_write("[WEBDAV] Renaming %s to %s\n", old_path.c_str(), new_path.c_str());
 
     const std::string custom_headers[] = {
-        "Destination: " + build_url(new_path, is_dir),
+        "Destination: " + webdav_url(new_path, is_dir),
         "Overwrite: T",
     };
 
@@ -431,7 +504,7 @@ int Device::devoptab_open(void *fileStruct, const char *path, int flags, int mod
 
     if ((flags & O_ACCMODE) == O_RDONLY) {
         // ensure the file exists and get its size.
-        const auto ret = webdav_stat(path, &st, false);
+        const auto ret = webdav_stat(path, &st);
         if (ret < 0) {
             return ret;
         }
@@ -480,7 +553,7 @@ ssize_t Device::devoptab_read(void *fd, char *ptr, size_t len) {
 
     if (!file->push_pull_thread_data) {
         log_write("[WEBDAV] Creating download thread data for file: %s\n", file->entry->path.c_str());
-        file->push_pull_thread_data = CreatePushData(this->transfer_curl, build_url(file->entry->path, false), file->off);
+        file->push_pull_thread_data = CreatePushData(this->transfer_curl, webdav_url(file->entry->path, false), file->off);
         if (!file->push_pull_thread_data) {
             log_write("[WEBDAV] Failed to create download thread data for file: %s\n", file->entry->path.c_str());
             return -EIO;
@@ -508,7 +581,7 @@ ssize_t Device::devoptab_write(void *fd, const char *ptr, size_t len) {
 
     if (!file->push_pull_thread_data) {
         log_write("[WEBDAV] Creating upload thread data for file: %s\n", file->entry->path.c_str());
-        file->push_pull_thread_data = CreatePullData(this->transfer_curl, build_url(file->entry->path, false));
+        file->push_pull_thread_data = CreatePullData(this->transfer_curl, webdav_url(file->entry->path, false));
         if (!file->push_pull_thread_data) {
             log_write("[WEBDAV] Failed to create upload thread data for file: %s\n", file->entry->path.c_str());
             return -EIO;
@@ -620,13 +693,17 @@ int Device::devoptab_dirnext(void* fd, char *filename, struct stat *filestat) {
         return -ENOENT;
     }
 
-    auto& entry = (*dir->entries)[dir->index];
+    const auto& entry = (*dir->entries)[dir->index];
     if (entry.is_dir) {
         filestat->st_mode = S_IFDIR | S_IRUSR | S_IRGRP | S_IROTH;
     } else {
         filestat->st_mode = S_IFREG | S_IRUSR | S_IRGRP | S_IROTH;
+        filestat->st_size = entry.size;
     }
 
+    filestat->st_mtime = entry.mtime;
+    filestat->st_atime = entry.mtime;
+    filestat->st_ctime = entry.mtime;
     filestat->st_nlink = 1;
     std::strcpy(filename, entry.name.c_str());
 
@@ -642,11 +719,7 @@ int Device::devoptab_dirclose(void* fd) {
 }
 
 int Device::devoptab_lstat(const char *path, struct stat *st) {
-    auto ret = webdav_stat(path, st, false);
-    if (ret == -ENOENT) {
-        ret = webdav_stat(path, st, true);
-    }
-
+    const auto ret = webdav_stat(path, st);
     if (ret < 0) {
         log_write("[WEBDAV] webdav_stat() failed: %s errno: %s\n", path, std::strerror(-ret));
         return ret;
