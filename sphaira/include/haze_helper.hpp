@@ -1,5 +1,6 @@
 #pragma once
 
+#include <switch.h>
 #include <functional>
 
 namespace sphaira::libhaze {
@@ -10,7 +11,7 @@ void Exit();
 
 using OnInstallStart = std::function<bool(const char* path)>;
 using OnInstallWrite = std::function<bool(const void* buf, size_t size)>;
-using OnInstallClose = std::function<void()>;
+using OnInstallClose = std::function<Result()>;
 
 void InitInstallMode(const OnInstallStart& on_start, const OnInstallWrite& on_write, const OnInstallClose& on_close);
 
@@ -21,6 +22,5 @@ bool IsInstallModeEnabled();
 // stops accepting installs and waits for every in-flight install callback to
 // return. never call this whilst holding a lock that a callback may need.
 void DisableInstallMode();
-void FinishInstallProgress();
 
 } // namespace sphaira::libhaze

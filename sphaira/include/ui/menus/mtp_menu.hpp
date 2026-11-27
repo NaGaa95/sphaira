@@ -12,10 +12,12 @@ struct Menu final : stream::Menu {
     void Update(Controller* controller, TouchInfo* touch) override;
     void OnDisableInstallMode() override;
     bool IsInstallModeActive() const override;
-    void OnFinishInstallProgress() override;
-    bool WaitForInstallOnClose() const override { return false; }
 
 private:
+    void UpdateSubHeading();
+
+private:
+    TimeStamp m_poll_ts{};
     bool m_was_mtp_enabled{};
 };
 

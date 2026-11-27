@@ -490,7 +490,7 @@ if (ENABLE_LIBHAZE)
 
     FetchContent_Declare(libhaze
         GIT_REPOSITORY https://github.com/R-YaTian/libhaze.git
-        GIT_TAG 9f5467c
+        GIT_TAG fb2eb7846739954dbe57f1d2eb49d960262f933c
         ${libhaze_patch}
     )
 
