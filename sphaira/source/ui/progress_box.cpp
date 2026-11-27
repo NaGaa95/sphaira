@@ -207,7 +207,7 @@ auto ProgressBox::Draw(NVGcontext* vg, Theme* theme) -> void {
         gfx::drawSpinner(vg, theme, prog_bar.x - pad - rad, prog_bar.y + prog_bar.h / 2, rad, armTicksToNs(armGetSystemTick()) / 1e+9);
 
         const auto left = size - last_offset;
-        const auto left_seconds = left / speed;
+        const auto left_seconds = speed > 0 ? left / speed : 0;
         const auto hours = left_seconds / (60 * 60);
         const auto minutes = left_seconds % (60 * 60) / 60;
         const auto seconds = left_seconds % 60;
@@ -302,6 +302,7 @@ auto ProgressBox::NewTransfer(const std::string& transfer)  -> ProgressBox& {
     m_size = 0;
     m_offset = 0;
     m_last_offset = 0;
+    m_speed = 0;
     m_timestamp.Update();
     return *this;
 }
@@ -311,6 +312,7 @@ auto ProgressBox::ResetTranfser() -> ProgressBox& {
     m_size = 0;
     m_offset = 0;
     m_last_offset = 0;
+    m_speed = 0;
     m_timestamp.Update();
     return *this;
 }

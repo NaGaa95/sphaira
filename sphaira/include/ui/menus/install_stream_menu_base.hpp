@@ -1,6 +1,8 @@
 #pragma once
 
 #include "ui/menus/menu_base.hpp"
+#include "ui/list.hpp"
+#include "ui/scrolling_text.hpp"
 #include "yati/source/stream.hpp"
 
 #include <atomic>
@@ -18,8 +20,6 @@ enum class State {
     Progress,
     // set when the transfer is finished.
     Done,
-    // failed to connect.
-    Failed,
 };
 
 using OnInstallStart = std::function<bool(const char* path)>;
@@ -54,6 +54,10 @@ private:
     fs::FsPath m_path{};
     std::stop_token m_token{};
     std::vector<u8> m_buffer{};
+    size_t m_capacity{};
+    size_t m_read_pos{};
+    size_t m_write_pos{};
+    size_t m_size{};
     CondVar m_can_read{};
     CondVar m_can_write{};
     Mutex m_mutex{};
@@ -73,12 +77,6 @@ struct Menu : MenuBase {
     // returns false once the transport is no longer accepting installs, used
     // to break out of the blocking callbacks below.
     virtual bool IsInstallModeActive() const = 0;
-    // called by the installer thread once the install has finished, the
-    // transport may accept the next file again.
-    virtual void OnFinishInstallProgress() {}
-    // whether OnInstallClose() blocks until the install has finished. mtp
-    // returns false as it answers the next file with DeviceBusy instead.
-    virtual bool WaitForInstallOnClose() const { return true; }
 
 protected:
     // the below are called from the transport (mtp / ftp) thread and may block
@@ -86,7 +84,7 @@ protected:
     // lock that the ui thread can also take.
     bool OnInstallStart(const char* path);
     bool OnInstallWrite(const void* buf, size_t size);
-    void OnInstallClose();
+    Result OnInstallClose();
 
     // unblocks every in-flight transport callback and disables install mode.
     // derived classes MUST call this as the first thing in their destructor,
@@ -97,17 +95,37 @@ protected:
     // true when the menu is going away or the transport stopped accepting data.
     bool IsCancelled() const;
 
+    void SetListRect(const Vec4& v);
+
 private:
+    struct LogEntry {
+        std::string name{};
+        Result rc{};
+    };
+
     // blocks until the current transfer (and its ui teardown) has completed.
     // returns false if it was cancelled instead.
-    bool WaitForIdle(u64 poll_ns);
+    bool WaitForIdle();
+    void SetIndex(s64 index);
+    void UpdateSummaryHeading();
 
 private:
     // shared_ptr as the installer thread keeps the stream alive for the
     // duration of the install, regardless of what the transport does next.
     std::shared_ptr<Stream> m_source{};
     mutable Mutex m_mutex{};
+    CondVar m_idle_cv{};
     State m_state{State::None};
+    Result m_last_rc{};
+    bool m_screen_toggle_enabled{};
+
+    // ui thread only.
+    std::unique_ptr<ui::List> m_list{};
+    std::vector<LogEntry> m_log{};
+    size_t m_ok_count{};
+    size_t m_fail_count{};
+    s64 m_index{};
+    ScrollingText m_scroll_name{};
 };
 
 } // namespace sphaira::ui::menu::stream

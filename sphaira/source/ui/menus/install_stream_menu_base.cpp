@@ -5,18 +5,20 @@
 #include "log.hpp"
 #include "ui/nvg_util.hpp"
 #include "i18n.hpp"
+#include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace sphaira::ui::menu::stream {
 namespace {
 
-constexpr u64 MAX_BUFFER_SIZE = 1024ULL*1024ULL*1ULL;
+constexpr u64 MAX_BUFFER_SIZE_APP = 1024ULL * 1024ULL * 16ULL;
+constexpr u64 MAX_BUFFER_SIZE_APPLET = 1024ULL * 1024ULL * 4ULL;
+constexpr size_t MAX_LOG_ENTRIES = 500;
 
 // every wait in here is bounded, a missed wakeup then costs a few ms rather
 // than hanging the transport (and with it the whole app) forever.
 constexpr u64 WAIT_TIMEOUT = 1e+8; // 100ms.
-constexpr u64 POLL_INTERVAL_FAST = 1e+6; // 1ms.
-constexpr u64 POLL_INTERVAL_SLOW = 1e+7; // 10ms.
 
 } // namespace
 
@@ -24,7 +26,8 @@ Stream::Stream(const fs::FsPath& path, std::stop_token token) {
     m_path = path;
     m_token = token;
     m_active = true;
-    m_buffer.reserve(MAX_BUFFER_SIZE);
+    m_capacity = App::IsApplication() ? MAX_BUFFER_SIZE_APP : MAX_BUFFER_SIZE_APPLET;
+    m_buffer.resize(m_capacity);
 
     mutexInit(&m_mutex);
     condvarInit(&m_can_read);
@@ -43,7 +46,7 @@ Result Stream::ReadChunk(void* _buf, s64 size, u64* bytes_read) {
     while (!m_token.stop_requested()) {
         SCOPED_MUTEX(&m_mutex);
 
-        if (m_buffer.empty()) {
+        if (!m_size) {
             if (!m_active) {
                 break;
             }
@@ -52,9 +55,15 @@ Result Stream::ReadChunk(void* _buf, s64 size, u64* bytes_read) {
             continue;
         }
 
-        const auto rsize = std::min<s64>(size, m_buffer.size());
-        std::memcpy(buf, m_buffer.data(), rsize);
-        m_buffer.erase(m_buffer.begin(), m_buffer.begin() + rsize);
+        const auto rsize = std::min<size_t>(size, m_size);
+        const auto first = std::min<size_t>(rsize, m_capacity - m_read_pos);
+        std::memcpy(buf, m_buffer.data() + m_read_pos, first);
+        if (rsize > first) {
+            std::memcpy(buf + first, m_buffer.data(), rsize - first);
+        }
+
+        m_read_pos = (m_read_pos + rsize) % m_capacity;
+        m_size -= rsize;
         condvarWakeAll(std::addressof(m_can_write));
 
         size -= rsize;
@@ -87,7 +96,7 @@ bool Stream::Push(const void* _buf, s64 size) {
 
         // the installer already finished (or gave up) reading this file, the
         // remaining data is not needed, pretend it was consumed so that the
-        // transport can move on to the next file.
+        // transport can drain cleanly and move on to the next file.
         if (m_install_done) {
             return true;
         }
@@ -97,16 +106,20 @@ bool Stream::Push(const void* _buf, s64 size) {
             break;
         }
 
-        if (m_buffer.size() >= MAX_BUFFER_SIZE) {
+        if (m_size >= m_capacity) {
             Wait(std::addressof(m_can_write));
             continue;
         }
 
-        const auto wsize = std::min<s64>(size, MAX_BUFFER_SIZE - m_buffer.size());
-        const auto offset = m_buffer.size();
-        m_buffer.resize(offset + wsize);
+        const auto wsize = std::min<size_t>(size, m_capacity - m_size);
+        const auto first = std::min<size_t>(wsize, m_capacity - m_write_pos);
+        std::memcpy(m_buffer.data() + m_write_pos, buf, first);
+        if (wsize > first) {
+            std::memcpy(m_buffer.data(), buf + first, wsize - first);
+        }
 
-        std::memcpy(m_buffer.data() + offset, buf, wsize);
+        m_write_pos = (m_write_pos + wsize) % m_capacity;
+        m_size += wsize;
         condvarWakeAll(std::addressof(m_can_read));
 
         size -= wsize;
@@ -132,6 +145,10 @@ void Stream::Disable() {
 void Stream::SetInstallFinished() {
     SCOPED_MUTEX(&m_mutex);
     m_install_done = true;
+    m_active = false;
+    m_size = 0;
+    m_read_pos = 0;
+    m_write_pos = 0;
     condvarWakeAll(std::addressof(m_can_read));
     condvarWakeAll(std::addressof(m_can_write));
 }
@@ -145,8 +162,17 @@ Menu::Menu(const std::string& title, u32 flags) : MenuBase{title, flags} {
         App::DisplayInstallOptions(false);
     }});
 
+    SetListRect({75.f, GetY() + 1.f + 42.f, 1220.f - 45.f * 2.f, 60.f});
+
+    // hold a screen-toggle reference across the session so turning the screen
+    // off survives transitioning between files in a batch.
+    if (App::AcquireScreenToggle()) {
+        m_screen_toggle_enabled = true;
+    }
+
     App::SetAutoSleepDisabled(true);
     mutexInit(&m_mutex);
+    condvarInit(&m_idle_cv);
 }
 
 Menu::~Menu() {
@@ -158,11 +184,17 @@ Menu::~Menu() {
     {
         SCOPED_MUTEX(&m_mutex);
         source = m_source;
+        condvarWakeAll(&m_idle_cv);
     }
 
     if (source) {
         source->Disable();
         source->SetInstallFinished();
+    }
+
+    if (m_screen_toggle_enabled) {
+        App::ReleaseScreenToggle();
+        m_screen_toggle_enabled = false;
     }
 
     App::SetAutoSleepDisabled(false);
@@ -189,6 +221,7 @@ void Menu::CancelInstallMode() {
     {
         SCOPED_MUTEX(&m_mutex);
         source = m_source;
+        condvarWakeAll(&m_idle_cv);
     }
 
     if (source) {
@@ -201,28 +234,41 @@ void Menu::CancelInstallMode() {
     OnDisableInstallMode();
 }
 
-bool Menu::WaitForIdle(u64 poll_ns) {
+bool Menu::WaitForIdle() {
     for (;;) {
-        {
-            SCOPED_MUTEX(&m_mutex);
-            // Connected means a stream is waiting to be picked up by the ui
-            // thread, Progress means the installer still owns it. In both
-            // cases the previous transfer is not done with yet.
-            if (m_state != State::Connected && m_state != State::Progress) {
-                return true;
-            }
-        }
-
         if (IsCancelled()) {
             return false;
         }
 
-        svcSleepThread(poll_ns);
+        SCOPED_MUTEX(&m_mutex);
+        // Connected means a stream is waiting to be picked up by the ui
+        // thread, Progress means the installer still owns it. In both
+        // cases the previous transfer is not done with yet.
+        if (m_state != State::Connected && m_state != State::Progress) {
+            return true;
+        }
+
+        if (GetToken().stop_requested()) {
+            return false;
+        }
+
+        condvarWaitTimeout(&m_idle_cv, &m_mutex, WAIT_TIMEOUT);
     }
 }
 
 void Menu::Update(Controller* controller, TouchInfo* touch) {
     MenuBase::Update(controller, touch);
+
+    if (!m_log.empty()) {
+        m_list->OnUpdate(controller, touch, m_index, m_log.size(), [this](bool touch, auto i) {
+            if (touch && m_index == i) {
+                FireAction(Button::A);
+            } else {
+                App::PlaySoundEffect(SoundEffect::Focus);
+                SetIndex(i);
+            }
+        });
+    }
 
     std::shared_ptr<Stream> source;
     {
@@ -237,69 +283,132 @@ void Menu::Update(Controller* controller, TouchInfo* touch) {
 
     // pushed outside of the lock, creating the progress box spawns a thread
     // whilst the transport thread is polling m_state.
-    App::Push<ui::ProgressBox>(0, "Installing "_i18n, source->GetPath(), [this, source](auto pbox) -> Result {
-        // whatever happens, stop the transport from blocking on this stream.
+    const std::string name = source->GetPath().s;
+    App::Push<ui::ProgressBox>(0, "Installing "_i18n, source->GetPath(), [source](auto pbox) -> Result {
+        // whatever happens, atomically mark finished so transport never blocks or errors in Push().
         ON_SCOPE_EXIT(source->SetInstallFinished());
 
-        const auto rc = yati::InstallFromSource(pbox, source.get(), source->GetPath());
-
-        // the transport may accept the next file again.
-        OnFinishInstallProgress();
-
-        if (R_FAILED(rc)) {
-            source->Disable();
-            R_THROW(rc);
-        }
-
+        R_TRY(yati::InstallFromSource(pbox, source.get(), source->GetPath()));
         R_SUCCEED();
-    }, [this](Result rc){
-        App::PushErrorBox(rc, "Install failed!"_i18n);
+    }, [this, name](Result rc){
+        if (m_log.size() >= MAX_LOG_ENTRIES) {
+            m_log.erase(m_log.begin());
+        }
+        m_log.push_back(LogEntry{name, rc});
 
-        bool failed;
-        {
-            SCOPED_MUTEX(&m_mutex);
-
-            if (R_SUCCEEDED(rc)) {
-                App::Notify("Install success!"_i18n);
-                m_state = State::Done;
-                failed = false;
-            } else {
-                m_state = State::Failed;
-                failed = true;
-            }
+        if (R_SUCCEEDED(rc)) {
+            m_ok_count++;
+            App::Notify(i18n::Reorder("Installed ", name));
+        } else {
+            m_fail_count++;
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), " (0x%X)", R_VALUE(rc));
+            App::Notify("Install failed!"_i18n + " " + name + buf);
         }
 
-        // must be done *without* m_mutex held. the transport thread can be
-        // blocked inside one of our callbacks whilst holding its own lock, and
-        // disabling install mode takes that same lock, which would deadlock.
-        if (failed) {
-            CancelInstallMode();
-        }
+        const auto count = static_cast<s64>(m_log.size());
+        const auto page = m_list->GetPage();
+        m_list->SetYoff(count > page ? (count - page) * m_list->GetMaxY() : 0.f);
+        UpdateSummaryHeading();
+        SetIndex(count - 1);
+
+        SCOPED_MUTEX(&m_mutex);
+        m_last_rc = rc;
+        m_state = State::Done;
+        condvarWakeAll(&m_idle_cv);
     }, ui::ProgressBoxOption::ScreenToggle);
 }
 
 void Menu::Draw(NVGcontext* vg, Theme* theme) {
     MenuBase::Draw(vg, theme);
 
-    State state;
-    {
-        SCOPED_MUTEX(&m_mutex);
-        state = m_state;
+    if (m_log.empty()) {
+        gfx::drawTextArgs(vg, SCREEN_WIDTH / 2.f, SCREEN_HEIGHT / 2.f, 36.f, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_INFO), "Drag'n'Drop (NSP, XCI, NSZ, XCZ, MSP) to the install folder"_i18n.c_str());
+        return;
     }
 
-    switch (state) {
-        case State::None:
-        case State::Done:
-            gfx::drawTextArgs(vg, SCREEN_WIDTH / 2.f, SCREEN_HEIGHT / 2.f, 36.f, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_INFO), "Drag'n'Drop (NSP, XCI, NSZ, XCZ, MSP) to the install folder"_i18n.c_str());
-            break;
+    constexpr float text_xoffset{15.f};
+    m_list->Draw(vg, theme, m_log.size(), [this](auto* vg, auto* theme, const auto& v, auto i) {
+        const auto& [x, y, w, h] = v;
+        const auto& entry = m_log[i];
 
-        case State::Connected:
-        case State::Progress:
-            break;
+        auto text_id = ThemeEntryID_TEXT;
+        if (m_index == i) {
+            text_id = ThemeEntryID_TEXT_SELECTED;
+            gfx::drawRectOutline(vg, theme, 4.f, v);
+        } else if (i != static_cast<s64>(m_log.size()) - 1) {
+            gfx::drawRect(vg, x, y + h, w, 1.f, theme->GetColour(ThemeEntryID_LINE_SEPARATOR));
+        }
 
-        case State::Failed:
-            gfx::drawTextArgs(vg, SCREEN_WIDTH / 2.f, SCREEN_HEIGHT / 2.f, 36.f, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE, theme->GetColour(ThemeEntryID_TEXT_INFO), "Failed to install, press B to exit..."_i18n.c_str());
-            break;
+        const bool ok = R_SUCCEEDED(entry.rc);
+        const char* icon = ok ? "\uE14B" : "\uE140";
+        const auto status_colour = theme->GetColour(ok ? ThemeEntryID_TEXT_SELECTED : ThemeEntryID_ERROR);
+        gfx::drawText(vg, x + text_xoffset, y + h / 2.f, 22.f, icon, nullptr, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE, status_colour);
+
+        std::string right;
+        if (ok) {
+            right = "OK"_i18n;
+        } else {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%s 0x%X", "Error"_i18n.c_str(), R_VALUE(entry.rc));
+            right = buf;
+        }
+
+        float bounds[4]{};
+        nvgFontSize(vg, 18.f);
+        gfx::textBounds(vg, 0, 0, bounds, right.c_str());
+        const float right_w = std::max(0.f, bounds[2] - bounds[0]);
+
+        const float name_x = x + text_xoffset + 34.f;
+        const float name_w = std::max(40.f, w - text_xoffset * 2.f - 34.f - right_w - 20.f);
+        m_scroll_name.Draw(vg, m_index == i, name_x, y + h / 2.f, name_w, 20.f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE, theme->GetColour(text_id), entry.name);
+
+        gfx::drawTextArgs(vg, x + w - text_xoffset, y + h / 2.f, 18.f, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE, ok ? theme->GetColour(ThemeEntryID_TEXT_INFO) : status_colour, "%s", right.c_str());
+    });
+}
+
+void Menu::SetListRect(const Vec4& v) {
+    m_list = std::make_unique<ui::List>(1, 8, m_pos, v);
+}
+
+void Menu::SetIndex(s64 index) {
+    if (m_log.empty()) {
+        m_index = 0;
+        m_list->SetYoff(0);
+        RemoveAction(Button::A);
+        RemoveAction(Button::Y);
+        return;
+    }
+
+    m_index = std::clamp<s64>(index, 0, static_cast<s64>(m_log.size()) - 1);
+    if (!m_index) {
+        m_list->SetYoff(0);
+    }
+
+    SetAction(Button::Y, Action{"Clear finished"_i18n, [this](){
+        m_log.clear();
+        m_ok_count = 0;
+        m_fail_count = 0;
+        UpdateSummaryHeading();
+        SetIndex(0);
+    }});
+
+    if (R_FAILED(m_log[m_index].rc)) {
+        SetAction(Button::A, Action{"Details"_i18n, [this](){
+            App::PushErrorBox(m_log[m_index].rc, m_log[m_index].name);
+        }});
+    } else {
+        RemoveAction(Button::A);
+    }
+}
+
+void Menu::UpdateSummaryHeading() {
+    if (m_ok_count || m_fail_count) {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "Installed: %zu  |  Failed: %zu"_i18n.c_str(), m_ok_count, m_fail_count);
+        SetTitleSubHeading(buf);
+    } else {
+        SetTitleSubHeading("");
     }
 }
 
@@ -310,20 +419,20 @@ bool Menu::OnInstallStart(const char* path) {
     // Progress once the progress box has been destroyed, and that joins the
     // installer thread first, so by this point nothing can still be using the
     // old stream.
-    if (!WaitForIdle(POLL_INTERVAL_FAST)) {
+    if (!WaitForIdle()) {
         log_write("[Menu::OnInstallStart] cancelled whilst waiting\n");
         return false;
     }
 
     SCOPED_MUTEX(&m_mutex);
 
-    // a failed install ends the session, don't accept anything else.
-    if (m_state == State::Failed || GetToken().stop_requested()) {
-        log_write("[Menu::OnInstallStart] rejecting, state: %u\n", (u8)m_state);
+    if (GetToken().stop_requested()) {
+        log_write("[Menu::OnInstallStart] rejecting, cancelled\n");
         return false;
     }
 
     m_source = std::make_shared<Stream>(path, GetToken());
+    m_last_rc = 0;
     m_state = State::Connected;
     log_write("[Menu::OnInstallStart] exiting\n");
 
@@ -345,7 +454,7 @@ bool Menu::OnInstallWrite(const void* buf, size_t size) {
     return source->Push(buf, size);
 }
 
-void Menu::OnInstallClose() {
+Result Menu::OnInstallClose() {
     log_write("[Menu::OnInstallClose] inside\n");
 
     std::shared_ptr<Stream> source;
@@ -360,18 +469,14 @@ void Menu::OnInstallClose() {
         source->Disable();
     }
 
-    // mtp answers the next CreateFile() with DeviceBusy until the install has
-    // finished, so it returns straight away. ftp has no such response and
-    // relies on this blocking to serialise its queue.
-    if (!WaitForInstallOnClose()) {
-        return;
+    // wait until the install has finished before returning so the next file
+    // does not race with this one and failures can be reported synchronously.
+    if (!WaitForIdle()) {
+        R_THROW(Result_TransferCancelled);
     }
 
-    // wait until the install has finished before returning. without this the
-    // transport opens the next file whilst this one is still installing, which
-    // with a queue of many (small) files ends up replacing the stream from
-    // under the installer.
-    WaitForIdle(POLL_INTERVAL_SLOW);
+    SCOPED_MUTEX(&m_mutex);
+    return m_last_rc;
 }
 
 } // namespace sphaira::ui::menu::stream

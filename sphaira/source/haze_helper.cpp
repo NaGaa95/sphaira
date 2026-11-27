@@ -27,7 +27,6 @@ struct InstallSharedData {
     OnInstallWrite on_write;
     OnInstallClose on_close;
 
-    bool in_progress;
     // number of install callbacks currently executing. the callbacks block for
     // as long as an install takes, so they are *never* run whilst holding
     // mutex, this counter is what keeps them alive instead.
@@ -95,7 +94,7 @@ bool StartInstall(std::string path) {
     OnInstallStart on_start;
     {
         SCOPED_MUTEX(&g_shared_data.mutex);
-        if (g_shared_data.in_progress || !g_shared_data.current_file.empty() || !g_shared_data.on_start) {
+        if (!g_shared_data.current_file.empty() || !g_shared_data.on_start) {
             return false;
         }
 
@@ -103,16 +102,13 @@ bool StartInstall(std::string path) {
         on_start = g_shared_data.on_start;
     }
 
-    // called without the lock held, on_start blocks until the previous install
-    // has finished, which can take minutes.
+    // called without the lock held, on_start waits for any previous install to finish.
     if (!on_start(path.c_str())) {
         SCOPED_MUTEX(&g_shared_data.mutex);
         g_shared_data.current_file.clear();
         return false;
     }
 
-    SCOPED_MUTEX(&g_shared_data.mutex);
-    g_shared_data.in_progress = true;
     return true;
 }
 
@@ -462,6 +458,7 @@ struct FsProxyVfs : FsProxyBase {
         std::shared_ptr<Entry> entry;
         haze::FileOpenMode mode{};
         bool installing{};
+        bool committed{};
     };
 
     struct Dir {
@@ -905,15 +902,12 @@ struct FsInstallProxy final : FsProxyVfs {
     Result CreateFile(const char* path, s64 size) override {
         R_TRY(FailedIfNotEnabled());
 
-        // another install is still running, the host retries after DeviceBusy.
-        bool busy;
-        {
-            SCOPED_MUTEX(&g_shared_data.mutex);
-            busy = g_shared_data.in_progress;
+        const Result rc = FsProxyVfs::CreateFile(path, size);
+        if (rc == FsError_PathAlreadyExists && CanReplaceExistingFile(path) && R_SUCCEEDED(FsProxyVfs::DeleteFile(path))) {
+            return FsProxyVfs::CreateFile(path, size);
         }
-        R_UNLESS(!busy, MAKERESULT(Module_Haze, 20)); // haze::ResultDeviceBusy
 
-        return FsProxyVfs::CreateFile(path, size);
+        return rc;
     }
 
     Result OpenFile(const char *path, haze::FileOpenMode mode, haze::File *out_file) override {
@@ -927,12 +921,7 @@ struct FsInstallProxy final : FsProxyVfs {
             auto f = static_cast<File*>(out_file->impl);
             f->installing = IsValidFileType(f->entry->name.c_str());
             if (f->installing) {
-                auto install_path = f->entry->path;
-                if (!install_path.empty() && install_path.front() == '/') {
-                    install_path.erase(install_path.begin());
-                }
-
-                if (!StartInstall(std::move(install_path))) {
+                if (!StartInstall(StripLeadingSlash(f->entry->path))) {
                     FsProxyVfs::CloseFile(out_file);
                     R_THROW(FsError_NotImplemented);
                 }
@@ -977,38 +966,88 @@ struct FsInstallProxy final : FsProxyVfs {
         R_SUCCEED();
     }
 
+    Result FlushFile(haze::File *file) override {
+        auto f = static_cast<File*>(file->impl);
+        R_UNLESS(f && f->entry, FsError_PathNotFound);
+
+        if (!f->installing || f->committed) {
+            R_SUCCEED();
+        }
+
+        log_write("[MTP] flushing install: %s\n", f->entry->path.c_str());
+
+        const Result install_rc = CommitInstall(f);
+        if (R_FAILED(install_rc)) {
+            log_write("[MTP] install failed: %s (0x%08X)\n", f->entry->path.c_str(), R_VALUE(install_rc));
+            if (R_MODULE(install_rc) == Module_Fs) {
+                return install_rc;
+            }
+            R_THROW(FsError_NotImplemented);
+        }
+
+        R_SUCCEED();
+    }
+
     void CloseFile(haze::File *file) override {
         auto f = static_cast<File*>(file->impl);
         if (!f) {
             return;
         }
 
-        if (f->installing) {
+        if (f->installing && !f->committed) {
             log_write("[MTP] closing current file\n");
-
-            {
-                InstallCallbackGuard guard;
-
-                OnInstallClose on_close;
-                if (guard) {
-                    SCOPED_MUTEX(&g_shared_data.mutex);
-                    on_close = g_shared_data.on_close;
-                }
-
-                // called without the lock held. on_close returns once the file
-                // has been handed to the installer, in_progress stays set until
-                // FinishInstallProgress() so that the next CreateFile() is
-                // answered with DeviceBusy in the meantime.
-                if (on_close) {
-                    on_close();
-                }
-            }
-
-            SCOPED_MUTEX(&g_shared_data.mutex);
-            g_shared_data.current_file.clear();
+            CommitInstall(f);
         }
 
         FsProxyVfs::CloseFile(file);
+    }
+
+private:
+    static auto StripLeadingSlash(std::string path) -> std::string {
+        if (!path.empty() && path.front() == '/') {
+            path.erase(path.begin());
+        }
+        return path;
+    }
+
+    bool CanReplaceExistingFile(const char* path) {
+        haze::FileAttrType type{};
+        if (R_FAILED(FsProxyVfs::GetEntryType(path, &type)) || type != haze::FileAttrType_FILE) {
+            return false;
+        }
+
+        std::string normalized;
+        std::string key;
+        if (R_FAILED(FsProxyVfs::NormalizePath(path, normalized, key))) {
+            return false;
+        }
+
+        const auto candidate = StripLeadingSlash(std::move(normalized));
+        SCOPED_MUTEX(&g_shared_data.mutex);
+        return g_shared_data.current_file.empty() || strcasecmp(g_shared_data.current_file.c_str(), candidate.c_str()) != 0;
+    }
+
+    Result CommitInstall(File* f) {
+        f->committed = true;
+
+        Result install_rc{};
+        {
+            InstallCallbackGuard guard;
+
+            OnInstallClose on_close;
+            if (guard) {
+                SCOPED_MUTEX(&g_shared_data.mutex);
+                on_close = g_shared_data.on_close;
+            }
+
+            if (on_close) {
+                install_rc = on_close();
+            }
+        }
+
+        SCOPED_MUTEX(&g_shared_data.mutex);
+        g_shared_data.current_file.clear();
+        return install_rc;
     }
 };
 
@@ -1134,7 +1173,6 @@ void InitInstallMode(const OnInstallStart& on_start, const OnInstallWrite& on_wr
     g_shared_data.on_start = on_start;
     g_shared_data.on_write = on_write;
     g_shared_data.on_close = on_close;
-    g_shared_data.in_progress = false;
     g_shared_data.current_file.clear();
     g_install_enabled = true;
 }
@@ -1157,14 +1195,7 @@ void DisableInstallMode() {
     g_shared_data.on_start = {};
     g_shared_data.on_write = {};
     g_shared_data.on_close = {};
-    g_shared_data.in_progress = false;
     g_shared_data.current_file.clear();
-}
-
-void FinishInstallProgress() {
-    // called by the installer thread, the next CreateFile() is accepted again.
-    SCOPED_MUTEX(&g_shared_data.mutex);
-    g_shared_data.in_progress = false;
 }
 
 } // namespace sphaira::libhaze
